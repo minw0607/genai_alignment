@@ -1,0 +1,19 @@
+run_id: intended_performance_public_benchmark_v1
+output_dir: outputs/runs
+default_pass_threshold: 0.7
+notes: >
+  Tier 1 - Intended performance - public-benchmark supplement (MMLU + TriviaQA + ARC,
+  stratified sample via genai_capability_bench's curated_knowledge_v1 dataset).
+
+models:
+  - name: azure-target
+    provider: azure_openai
+    model: "${TARGET_MODEL}"
+    temperature: null           # omitted for reasoning models that reject it
+    max_tokens: 300
+    token_parameter: max_completion_tokens
+
+dataset: scenarios/fixtures/public_benchmark_sample.jsonl
+
+pass_thresholds:
+  answer_accuracy: 0.7

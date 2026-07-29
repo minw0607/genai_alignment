@@ -1,0 +1,16 @@
+{
+  "generated_from": {
+    "repo": "https://github.com/minw0607/genai_capability_bench",
+    "commit": "5433aa017be5acd89ca679cdb18081cb6c43898b",
+    "source_dataset_key": "curated_knowledge_v1",
+    "source_row_count": 33156,
+    "source_composition": {"mmlu": 14042, "triviaqa": 17944, "arc": 1170}
+  },
+  "sampling": {
+    "function": "genai_capability_bench.datasets.registry.materialize_dataset",
+    "sample_size": 30,
+    "sample_strategy": "stratified",
+    "seed": 42
+  },
+  "note": "Frozen snapshot, not a live pull. genai_capability_bench's dataset files are not part of its pip package, so reproducing this sample from scratch requires a local clone of that repo at (or compatible with) the commit above."
+}
