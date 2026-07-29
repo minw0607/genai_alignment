@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md)
 
-**Tier 1 — Foundational behavior.** This is an **adapter** scenario — it reuses [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench)'s `AnswerAccuracyEvaluator`, dataset registry, and stable `run_from_config` API rather than building new evaluation machinery. Notebook: [`notebooks/01_intended_performance.ipynb`](../notebooks/01_intended_performance.ipynb).
+**Tier 1 — Foundational behavior.** This is an **adapter** scenario — it reuses [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench)'s `AnswerAccuracyEvaluator`, dataset registry, and stable `run_from_config` API rather than building new evaluation machinery. Notebook: [`notebooks/01_intended_performance.ipynb`](../notebooks/01_intended_performance.ipynb) · Sample report: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html).
 
 ---
 
@@ -24,6 +24,8 @@ Whether the system performs its defined task correctly and completely — the mo
 Reuses `genai_capability_bench`'s `AnswerAccuracyEvaluator`: a fixed prompt template asks the model to answer concisely, and the response is scored against a set of reference answers using a **scoring profile** — `short_answer_qa` (`max(exact_match, 0.65·token_f1 + 0.35·semantic_similarity)`) for open-answer questions, `multiple_choice` (`exact_match`) for MMLU/ARC-derived questions. [`adapters/capability_bench.py`](../adapters/capability_bench.py) calls the package's public `run_from_config` entry point; [`reporting/report.py`](../reporting/report.py) combines multiple sub-dataset runs and adds an LLM-judge second opinion — no evaluator, metric, or judge code is duplicated in this repo.
 
 **Every task scoring below the 0.70 pass threshold gets a second, independent look** from an LLM judge (`genai_capability_bench`'s `judge_with_rubric`), asked a plain-language question — *"is this substantively correct, regardless of phrasing?"* — rather than being taken at face value. This exists because the deterministic metrics above are lexical/semantic *proxies* for correctness, and proxies can be wrong in both directions: they can under-credit a correct-but-verbose answer, and they can (correctly) flag a genuinely wrong one. The judge is the same model family as the target being tested, which is a real limitation — it's a structured second read, not an independent adjudication, and a disagreement between judge and human reviewer should always win in the human's favor.
+
+**The deliverable is an HTML testing report, not the notebook itself.** [`reporting/html_report.py`](../reporting/html_report.py) + [`reporting/templates/scenario_report.html.j2`](../reporting/templates/scenario_report.html.j2) render a self-contained HTML file (data-structure charts, results charts, tables, and a written Observations/Next-Steps section) built from the same run's data — nothing in the report is written separately from what was actually executed, and the Observations section is generated from the judge output programmatically rather than hand-drafted, so it can't go stale on a re-run that produces a different mix of results. **This is the uniform template every scenario in this repo uses** — see [Reporting Template](#reporting-template) in the notebook for how a scenario adds its own extra sections without breaking the shared shape.
 
 ## What data is used
 
@@ -48,19 +50,21 @@ The public benchmark sample exists for breadth and external comparability — a 
 
 ## Examples & sample results
 
-Most recent run — Azure OpenAI, `gpt-5-5-20260424-gs`, API version `2025-04-01-preview`:
+Full report with charts: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Most recent run — Azure OpenAI, `gpt-5-5-20260424-gs`, API version `2025-04-01-preview`:
 
 | Sub-dataset | n | avg score | pass rate |
 |---|---|---|---|
-| Custom golden set | 10 | 0.913 | 80.0% |
-| Public benchmark sample | 30 | 0.925 | 93.3% |
-| **Overall** | **40** | **0.922** | **90.0%** |
+| Custom golden set | 10 | 0.887 | 80.0% |
+| Public benchmark sample | 30 | 0.860 | 86.7% |
+| **Overall** | **40** | **0.87** | **85.0%** |
 
-**4 tasks scored below threshold; the judge review split them cleanly into two different stories:**
+**6 tasks scored below threshold; the judge review split cleanly by sub-dataset, not randomly:**
 
-- **2 were scoring-metric artifacts, not failures** — both from the custom golden set. e.g. `ip-08`: *"Yes. The flight is reimbursable because the portal outage was confirmed by IT."* — correct, but scored 0.68 because the model's phrasing didn't lexically overlap enough with the golden set's shorter reference answers.
-- **2 were genuinely wrong, and the judge confirmed it** — both ARC-derived science items from the public sample. One is worth a caveat of its own: *"which substance retains the most energy from the Sun"* (gold answer "sand") is scientifically debatable on specific-heat-capacity grounds — a reminder that a public benchmark's gold answer isn't automatically ground truth either.
+- **2/2 custom-golden-set sub-threshold cases were scoring-metric artifacts, not failures.** e.g. `ip-08`: *"Yes. The flight is reimbursable because the portal outage was confirmed by IT."* — correct, but scored 0.68 because the model's phrasing didn't lexically overlap enough with the golden set's shorter reference answers.
+- **4/4 public-benchmark sub-threshold cases were confirmed genuinely wrong.** Two were real wrong picks on ARC science items — one worth a caveat of its own: *"which substance retains the most energy from the Sun"* (gold answer "sand") is scientifically debatable on specific-heat-capacity grounds, a reminder that a public benchmark's gold answer isn't automatically ground truth either.
+
+**A recurring technical finding, confirmed across three separate runs, not a one-off:** 1–2 tasks per run return an empty completion (no visible output at all, not an error) on the public benchmark sample specifically. The working hypothesis is that the 300-token `max_completion_tokens` budget is tight enough for this reasoning-family model to exhaust it on internal reasoning before producing a visible answer. This is now the **top next step** for this scenario — increase the token budget and confirm the empty completions stop.
 
 **A finding that only shows up by re-running this notebook, not from a single pass:** an earlier run of this exact scenario against a different model in the gpt-5 family produced a materially different pass rate on the identical golden set. That's not a bug in this scenario's harness — it's a live instance of [Tier 2 — drift detection](../README.md#scenario-library) surfacing inside a Tier 1 test, and a concrete reason results here should be re-read after any model change, not assumed to carry over.
 
-**Next step for this scenario:** wire `llm_judge_correctness` in as a proper secondary metric in `genai_capability_bench` rather than the ad hoc post-hoc pass used here, and route any judge/human disagreement to a defined adjudication step.
+**Next steps for this scenario:** increase `max_completion_tokens` in both `configs/intended_performance*.yaml` and confirm the empty-completion cases stop recurring; wire `llm_judge_correctness` in as a proper secondary metric in `genai_capability_bench` rather than the ad hoc post-hoc pass used here; route any judge/human disagreement to a defined adjudication step.
