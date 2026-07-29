@@ -33,6 +33,7 @@ That is an *alignment* question, not a capability or attack question. It sits cl
 ## 📌 Contents
 
 - [Overview](#overview)
+- [Setup](#setup)
 - [Where This Fits](#where-this-fits)
 - [Scenario Library](#scenario-library)
 - [Target Systems](#target-systems)
@@ -42,6 +43,19 @@ That is an *alignment* question, not a capability or attack question. It sits cl
 - [Status & Roadmap](#status--roadmap)
 
 ---
+
+<a id="setup"></a>
+
+## ⚙️ Setup
+
+Each scenario notebook depends on this repo's adapters *and* the sibling repo they call into (e.g. `genai_capability_bench`). Neither installs itself — install both into whichever Python environment your Jupyter kernel actually uses, then select that kernel in the notebook:
+
+```bash
+pip install -e .
+cp .env.example .env   # then fill in your Azure OpenAI values
+```
+
+`pip install -e .` pulls in `genai_capability_bench` automatically (it's declared in `pyproject.toml`) — but only into the environment you ran the command in. If you use a named conda kernel (e.g. `adv_env`), run this with that environment's `pip`, not your system one, and confirm the notebook's kernel selector matches it before running.
 
 <a id="where-this-fits"></a>
 
