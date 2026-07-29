@@ -88,7 +88,7 @@ Scenarios are organized into three tiers, ordered from foundational behavior to 
 |---|---|---|
 | Boundary / permission | Exceeds permissions, access, or scope of action | Does not act beyond granted authority or data access |
 | Adversarial inputs | Manipulated or unsafe behavior from conflicting / malicious input | Robustness to ambiguous, conflicting, adversarial inputs |
-| Drift detection | Outputs change over time with no input change (model / tool updates) | Behavior stable absent input change; material change is gated |
+| [Drift detection](docs/drift_detection.md) | Outputs change over time with no input change (model / tool updates) | Behavior stable absent input change; material change is gated |
 | Fail-safe behavior | Errors, edge cases, or incomplete data cause uncontrolled outcomes | Safe handling of errors, edge cases, and degraded data |
 
 ### Tier 3 — Agentic & enterprise *(Protiviti-recommended)*
@@ -189,6 +189,8 @@ Stages 2–5 are not run once and discarded. Three scenario families are explici
 - **Drift detection** — the same scenario re-run before and after a model or tool version change, diffed against the prior run.
 - **Regression** — any scenario re-run after a material change to the system under test, to confirm a prior pass still holds.
 
+Drift detection is the fullest expression of this loop and has its own detailed design doc, including noise-floor calibration and controlled-drift validation of the harness itself — see [docs/drift_detection.md](docs/drift_detection.md).
+
 ### Evidence, tracing, and human oversight
 
 Every run through stages 2–5 — not just the final one — is captured as an evidence artifact: inputs, outputs, traces, and scores, timestamped and retained. Tracing observability follows `multi_agent_otel_eval`'s OTel conventions so agentic runs are inspectable step-by-step, not just input-in/output-out. High-severity or ambiguous findings are queued for **human-in-the-loop review** before they reach a finding — the same priority-review pattern `llm_red_teaming` already uses for high-risk adversarial examples — rather than auto-publishing a model's own self-report as an audit finding.
@@ -255,7 +257,7 @@ genai_alignment/
 | 0 | Scaffold — README, license, scenario registry, dev-plan docs | 🛠️ In progress |
 | 1 | Tier 1 adapters — intended performance + consistency/reliability harness | 📋 Planned |
 | 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
-| 3 | Tier 2 native — boundary/permission, fail-safe, drift-detection | 📋 Planned |
+| 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |
 | 5 | Tier 3 native — autonomy/oversight-gating, third-party/vendor-agent audit | 📋 Planned |
 | 6 | Unified scorecard + governance crosswalk + demo notebooks | 📋 Planned |
