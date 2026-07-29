@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genai-alignment"
+version = "0.1.0"
+description = "Scenario-based alignment testing for enterprise GenAI systems."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "genai-capability-bench @ git+https://github.com/minw0607/genai_capability_bench",
+  "pandas>=2.0",
+  "pyyaml>=6.0",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ipykernel>=6.29",
+  "nbformat>=5.10",
+  "nbconvert>=7.16",
+  "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["adapters*", "native*"]

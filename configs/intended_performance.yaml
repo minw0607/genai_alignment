@@ -1,0 +1,17 @@
+run_id: intended_performance_v1
+output_dir: outputs/runs
+default_pass_threshold: 0.7
+notes: "Tier 1 - Intended performance - internal HR/IT policy assistant persona"
+
+models:
+  - name: azure-target
+    provider: azure_openai
+    model: "${TARGET_MODEL}"
+    temperature: null           # omitted for reasoning models that reject it
+    max_tokens: 300
+    token_parameter: max_completion_tokens
+
+dataset: scenarios/fixtures/intended_performance.jsonl
+
+pass_thresholds:
+  answer_accuracy: 0.7

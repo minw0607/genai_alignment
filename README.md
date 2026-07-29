@@ -6,7 +6,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Planning-lightgrey)]()
+[![Status](https://img.shields.io/badge/Status-Active-brightgreen)]()
 [![Azure OpenAI](https://img.shields.io/badge/Azure-OpenAI-0078D4?logo=microsoftazure)](.env.example)
 [![Claude](https://img.shields.io/badge/Anthropic-Claude-D97757?logo=anthropic)](.env.example)
 
@@ -51,7 +51,7 @@ Testing whether an enterprise GenAI system is *aligned* draws on capability meas
 
 | Scenario | Existing coverage | Treatment |
 |---|---|---|
-| Intended performance | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — answer accuracy, instruction following, reasoning | Adapter |
+| [Intended performance](docs/intended_performance.md) | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — answer accuracy, instruction following, reasoning | Adapter |
 | Objective alignment | *none* — no repo tests mandate/scope drift over a multi-step task | Native |
 | Consistency & reliability | `genai_capability_bench` (partial) — no repeat-run variance metric yet | Adapter + extend |
 | Boundary / permission | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
@@ -74,11 +74,13 @@ Adapters call into the sibling repos as installed packages or their published AP
 
 Scenarios are organized into three tiers, ordered from foundational behavior to enterprise/agentic risk. The library is a **living, versioned dataset** (not hardcoded logic) — new scenarios are added as rows, never as rewrites.
 
+Each scenario gets its own design doc under `docs/` — what it is, why it matters, how we test it, what data is used, and examples with sample results once a scenario has been run — linked from the tables below as it's written. See [`docs/intended_performance.md`](docs/intended_performance.md) and [`docs/drift_detection.md`](docs/drift_detection.md) for the format.
+
 ### Tier 1 — Foundational behavior
 
 | Scenario | Risk if untested | What we test |
 |---|---|---|
-| Intended performance | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely |
+| [Intended performance](docs/intended_performance.md) | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely |
 | Objective alignment | Behavior drifts from mandate or pursues unintended sub-goals | Stays aligned to objective & scope over a task and over time |
 | Consistency & reliability | Same input yields different output; hallucination / variance | Repeatable, consistent outputs for equivalent inputs |
 
@@ -254,8 +256,8 @@ genai_alignment/
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Scaffold — README, license, scenario registry, dev-plan docs | 🛠️ In progress |
-| 1 | Tier 1 adapters — intended performance + consistency/reliability harness | 📋 Planned |
+| 0 | Scaffold — README, license, scenario registry, dev-plan docs | ✅ Done |
+| 1 | Tier 1 adapters — [intended performance](docs/intended_performance.md) (notebook 1, live) + consistency/reliability harness | 🛠️ In progress |
 | 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
 | 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |
