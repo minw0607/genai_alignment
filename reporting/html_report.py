@@ -132,3 +132,25 @@ def save_report(html: str, path: str | Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")
     return path
+
+
+def embed_report(html: str, height: int = 900):
+    """Display report HTML inline in a notebook, regardless of Jupyter server setup.
+
+    `IPython.display.IFrame(src=<file path>)` only resolves if Jupyter's file-serving
+    root happens to line up with the notebook's own URL, which it usually doesn't —
+    it 404s under a plain `python -m jupyter` launch, VS Code's notebook server, and
+    plenty of other setups. Embedding the HTML directly via `srcdoc` sidesteps file
+    resolution entirely and works the same way everywhere.
+    """
+    from IPython.display import HTML
+
+    srcdoc = escape(html, quote=True)
+    # Wrapped in a div (not a bare <iframe>...</iframe> string) so IPython's HTML class
+    # doesn't fire its "consider using IFrame instead" warning — that class exists for
+    # src=URL iframes, not srcdoc ones, and would reintroduce the file-resolution problem.
+    return HTML(
+        f'<div class="genai-alignment-report-embed">'
+        f'<iframe srcdoc="{srcdoc}" style="width:100%; height:{height}px; '
+        'border:1px solid #e2e5e9; border-radius:6px;"></iframe></div>'
+    )
