@@ -247,6 +247,8 @@ Every run through stages 2–5 — not just the final one — is captured as an 
 - **Evidence & tracing layer** — per-run artifact capture with OTel-style tracing and a human-in-the-loop review queue for high-severity findings.
 - **Uniform HTML reporting** — every scenario renders through the same [`reporting/templates/scenario_report.html.j2`](reporting/templates/scenario_report.html.j2) template (self-contained, charts embedded inline, no external assets), with an `extra_sections` hook for scenario-specific customization. Built from the run's own data — see [`docs/samples/intended_performance_report.html`](docs/samples/intended_performance_report.html) for a real example.
 - **Governance-crosswalked reporting** — executive findings mapped to NIST AI RMF / EU AI Act / SR 11-7 / SR 26-2, in the same cited-crosswalk style as `llm_red_teaming` and Regulus.
+- **Environment self-check** — every notebook opens with [`reporting/env_check.py`](reporting/env_check.py) verifying its actual dependencies (packages, env vars, non-pip-installable sibling clones) and printing a clear pass/fail table before spending any API calls, instead of failing deep inside a later cell.
+- **Documentation trail** — every notebook closes with [`reporting/artifacts.py`](reporting/artifacts.py) listing every file the run read or wrote, with existence/size/last-modified checked live — an audit trail a reviewer can verify, not a claim the notebook makes about itself.
 
 ---
 
@@ -286,6 +288,8 @@ genai_alignment/
 │   ├── report.py               # combine_runs, judge_borderline (multi-dataset + LLM-judge review)
 │   ├── repeat_run.py           # repeat_runs, variance_by_task (N-run harness — consistency & drift detection both use this)
 │   ├── html_report.py          # ScenarioReport dataclass + render_report/save_report
+│   ├── env_check.py            # check_environment — every notebook's opening cell
+│   ├── artifacts.py            # Artifact, artifact_trail — every notebook's closing section
 │   └── templates/
 │       └── scenario_report.html.j2   # The one HTML template every scenario renders through
 │

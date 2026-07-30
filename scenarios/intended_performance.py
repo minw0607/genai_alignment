@@ -18,6 +18,7 @@ from genai_capability_bench.clients.factory import create_client
 from genai_capability_bench.core.schemas import ModelSpec
 
 from adapters.capability_bench import run_capability_scenario
+from reporting.artifacts import Artifact
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.report import combine_runs, judge_borderline
 
@@ -381,3 +382,29 @@ def build_report(
         notebook_link="../notebooks/01_intended_performance.ipynb",
         doc_link="../docs/intended_performance.md",
     )
+
+
+def artifacts(report_path: str) -> list[Artifact]:
+    """Every file this scenario's run reads or produces, for the documentation trail."""
+    return [
+        Artifact(
+            "Custom golden set (input)", GOLDEN_SET_PATH,
+            "Hand-authored HR/IT policy Q&A tasks — versioned, not regenerated per run.",
+        ),
+        Artifact(
+            "Public benchmark sample (input)", PUBLIC_SAMPLE_PATH,
+            "Frozen stratified MMLU/TriviaQA/ARC sample (seed 42) — versioned, not regenerated per run.",
+        ),
+        Artifact(
+            "Custom golden set — run output", "outputs/runs/intended_performance_v1",
+            "Per-task results, summary, and run metadata from genai_capability_bench (gitignored, regenerated every run).",
+        ),
+        Artifact(
+            "Public benchmark — run output", "outputs/runs/intended_performance_public_benchmark_v1",
+            "Per-task results, summary, and run metadata from genai_capability_bench (gitignored, regenerated every run).",
+        ),
+        Artifact(
+            "HTML testing report", report_path,
+            "The rendered report embedded above — scope, data, results, charts, and judge review.",
+        ),
+    ]

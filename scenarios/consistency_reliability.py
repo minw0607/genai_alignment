@@ -24,12 +24,14 @@ drift detection will need the same "run N times, compare" mechanic later.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
 from adapters.agent_otel import AgentHarness
 from adapters.capability_bench import run_capability_scenario
+from reporting.artifacts import Artifact
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import combine_repeats, repeat_runs, variance_by_task
 
@@ -42,6 +44,13 @@ PASS_THRESHOLD = 0.7
 CHATBOT_N_REPEATS = 5
 AGENTIC_N_REPEATS = 5
 AGENTIC_N_TASKS = 5
+
+# genai_capability_bench's run_capability_scenario writes each repeat to the
+# same fixed run_id directory (configs/intended_performance*.yaml), so calling
+# it N times in a loop overwrites itself — only the last repeat would survive
+# on disk. This scenario's own output dir is where all N repeats' combined
+# raw results actually persist; see save_artifacts().
+OUTPUT_DIR = "outputs/runs/consistency_reliability"
 
 
 # ---------------------------------------------------------------- Chatbot track
@@ -343,3 +352,68 @@ def build_report(
         notebook_link="../notebooks/02_consistency_reliability.ipynb",
         doc_link="../docs/consistency_reliability.md",
     )
+
+
+def save_artifacts(
+    chatbot_results: pd.DataFrame,
+    chatbot_var: pd.DataFrame,
+    agentic_results: pd.DataFrame,
+    agentic_var: pd.DataFrame,
+) -> dict[str, str]:
+    """Persist the combined raw results and variance tables for both tracks.
+
+    Without this, only the last of the N repeats would survive on disk (see
+    the OUTPUT_DIR note above) — the aggregated variance numbers in the
+    report would have no underlying per-repeat evidence to audit against.
+    """
+    out_dir = Path(OUTPUT_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "chatbot_raw": out_dir / "chatbot_raw_results.csv",
+        "chatbot_variance": out_dir / "chatbot_variance.csv",
+        "agentic_raw": out_dir / "agentic_raw_results.csv",
+        "agentic_variance": out_dir / "agentic_variance.csv",
+    }
+    chatbot_results.to_csv(paths["chatbot_raw"], index=False)
+    chatbot_var.to_csv(paths["chatbot_variance"], index=False)
+    agentic_results.to_csv(paths["agentic_raw"], index=False)
+    agentic_var.to_csv(paths["agentic_variance"], index=False)
+    return {k: str(v) for k, v in paths.items()}
+
+
+def artifacts(saved_paths: dict[str, str], report_path: str) -> list[Artifact]:
+    """Every file this scenario's run reads or produces, for the documentation trail."""
+    return [
+        Artifact(
+            "Custom golden set (input)", "scenarios/fixtures/intended_performance.jsonl",
+            "Reused unchanged from scenario 1 — versioned, not regenerated per run.",
+        ),
+        Artifact(
+            "Public benchmark sample (input)", "scenarios/fixtures/public_benchmark_sample.jsonl",
+            "Reused unchanged from scenario 1 — versioned, not regenerated per run.",
+        ),
+        Artifact(
+            "Mind2Web task cache (input)", "../Agent/outputs/data/mind2web_train.jsonl",
+            "multi_agent_otel_eval's cached copy — outside this repo, in the sibling clone.",
+        ),
+        Artifact(
+            "Chatbot raw results (all 5 repeats)", saved_paths["chatbot_raw"],
+            "Every individual run's per-task score, not just the aggregated variance — gitignored, regenerated every run.",
+        ),
+        Artifact(
+            "Chatbot variance by task", saved_paths["chatbot_variance"],
+            "The aggregated table shown above, as its own file.",
+        ),
+        Artifact(
+            "Agentic raw results (all 5 repeats × 2 modes)", saved_paths["agentic_raw"],
+            "Every individual agent run's score, tool calls, and outcome — gitignored, regenerated every run.",
+        ),
+        Artifact(
+            "Agentic variance by task and mode", saved_paths["agentic_variance"],
+            "The aggregated table shown above, as its own file.",
+        ),
+        Artifact(
+            "HTML testing report", report_path,
+            "The rendered report embedded above — scope, data, results, charts, and observations.",
+        ),
+    ]
