@@ -27,7 +27,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["adapters*", "native*", "reporting*"]
+include = ["adapters*", "native*", "reporting*", "scenarios*"]
 
 [tool.setuptools.package-data]
 reporting = ["templates/*.j2"]

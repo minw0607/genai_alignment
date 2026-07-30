@@ -236,8 +236,10 @@ Every run through stages 2–5 — not just the final one — is captured as an 
 ```
 genai_alignment/
 │
-├── scenarios/                  # Scenario registry (versioned data, not code)
-│   └── scenario_library.yaml   # The 12 scenarios: tier, risk, criteria, adapter/native, targets
+├── scenarios/
+│   ├── scenario_library.yaml   # Registry: the 12 scenarios — tier, risk, criteria, adapter/native, targets
+│   ├── fixtures/               # Golden sets and frozen public-benchmark samples (data)
+│   └── <scenario_name>.py      # Per-scenario logic — data loading, charts, report assembly (code)
 │
 ├── targets/                    # Shared target abstraction
 │   ├── openai_compatible.py    # Azure OpenAI (adapted from llm_red_teaming)
@@ -265,9 +267,8 @@ genai_alignment/
 │   └── templates/
 │       └── scenario_report.html.j2   # The one HTML template every scenario renders through
 │
-├── notebooks/                  # Demo notebook per scenario
+├── notebooks/                  # Demo notebook per scenario — code-light, calls into scenarios/*.py
 ├── configs/                    # genai_capability_bench-style run configs per scenario
-├── scenarios/fixtures/         # Golden sets and frozen public-benchmark samples
 ├── docs/
 │   ├── samples/                # Committed example HTML reports (one per scenario, once run)
 │   └── *.md                    # One design doc per scenario: what/why/how/data/examples+results
