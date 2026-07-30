@@ -7,8 +7,11 @@ Two tracks, testing two different kinds of "same input, run again":
 
 - Chatbot track: the same two golden sets from scenario 1 (Intended
   Performance), each run N times through genai_capability_bench's evaluator.
-  "Consistent" = pass/fail doesn't flip across runs, and the raw answers are
-  self-consistent with each other (TF-IDF similarity, not exact match).
+  "Consistent" = pass/fail doesn't flip across runs (raw flag) or fall
+  significantly below an acceptable floor once corrected for testing many
+  tasks at once (the rigorous version), and the raw answers cluster into one
+  meaning via bidirectional-entailment / semantic-entropy, not a TF-IDF
+  similarity threshold.
 - Agentic track: a fixed Mind2Web task subset, run N times through
   multi_agent_otel_eval, in both single-agent and multi-agent mode.
   "Consistent" here is NOT text similarity — an agent's actions are compared
@@ -16,9 +19,12 @@ Two tracks, testing two different kinds of "same input, run again":
   differently-named-but-equivalent tool isn't penalized) and task-outcome
   flip rate, not by diffing raw trajectories.
 
-Generic repeat-run mechanics (combine_repeats, variance_by_task,
-pairwise_self_consistency) live in reporting/repeat_run.py, not here, since
-drift detection will need the same "run N times, compare" mechanic later.
+Generic repeat-run mechanics (combine_repeats, variance_by_task, the
+semantic-consistency/Wilson-CI/BH-correction functions) live in
+reporting/repeat_run.py, not here, since drift detection will need the same
+"run N times, compare" mechanic later. See that module's docstring and
+docs/consistency_reliability.md for the statistical methodology and
+references (Kuhn et al. 2024; Wilson 1927; Benjamini & Hochberg 1995).
 """
 
 from __future__ import annotations
@@ -28,12 +34,21 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from genai_capability_bench.clients.factory import create_client
+from genai_capability_bench.core.schemas import ModelSpec
 
 from adapters.agent_otel import AgentHarness
 from adapters.capability_bench import run_capability_scenario
 from reporting.artifacts import Artifact
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
-from reporting.repeat_run import combine_repeats, repeat_runs, variance_by_task
+from reporting.repeat_run import (
+    add_reliability_significance,
+    add_semantic_consistency,
+    add_wilson_ci,
+    combine_repeats,
+    repeat_runs,
+    variance_by_task,
+)
 
 PALETTE = {"pass": "#2a9d8f", "fail": "#e76f51", "single": "#264653", "multi": "#e9c46a"}
 
@@ -45,12 +60,32 @@ CHATBOT_N_REPEATS = 5
 AGENTIC_N_REPEATS = 5
 AGENTIC_N_TASKS = 5
 
+# Policy choice, not something inferred from data: a task counts as
+# acceptably reliable if its true pass rate is at least 80%. Below that,
+# add_reliability_significance flags it — corrected for testing 40 (or 10)
+# tasks at once via Benjamini-Hochberg, not a raw per-task p-value.
+MIN_ACCEPTABLE_PASS_RATE = 0.8
+
 # genai_capability_bench's run_capability_scenario writes each repeat to the
 # same fixed run_id directory (configs/intended_performance*.yaml), so calling
 # it N times in a loop overwrites itself — only the last repeat would survive
 # on disk. This scenario's own output dir is where all N repeats' combined
 # raw results actually persist; see save_artifacts().
 OUTPUT_DIR = "outputs/runs/consistency_reliability"
+
+
+def build_judge_client(target_model: str):
+    """Client for semantic_consistency's bidirectional-entailment checks —
+    same reasoning-family-safe config as scenario 1's judge_review client."""
+    judge_spec = ModelSpec(
+        name="judge",
+        provider="azure_openai",
+        model=target_model,
+        temperature=None,
+        max_tokens=200,
+        token_parameter="max_completion_tokens",
+    )
+    return create_client(judge_spec)
 
 
 # ---------------------------------------------------------------- Chatbot track
@@ -70,15 +105,20 @@ def run_chatbot_repeats(n: int = CHATBOT_N_REPEATS) -> dict:
     return {"results": pd.concat(frames, ignore_index=True), "n_repeats": n}
 
 
-def chatbot_variance(chatbot_results: pd.DataFrame) -> pd.DataFrame:
-    return variance_by_task(
+def chatbot_variance(chatbot_results: pd.DataFrame, client) -> pd.DataFrame:
+    """`client` (see build_judge_client) drives the bidirectional-entailment
+    checks inside add_semantic_consistency below."""
+    var = variance_by_task(
         chatbot_results,
         id_col="task_id",
         score_col="score",
         passed_col="passed",
-        text_col="actual_output",
         passthrough_cols=["dataset_label", "category"],
     )
+    var = add_semantic_consistency(var, chatbot_results, id_col="task_id", text_col="actual_output", client=client)
+    var = add_wilson_ci(var)
+    var = add_reliability_significance(var, min_acceptable_rate=MIN_ACCEPTABLE_PASS_RATE)
+    return var
 
 
 def plot_chatbot_variance(variance: pd.DataFrame) -> ChartImage:
@@ -95,24 +135,26 @@ def plot_chatbot_variance(variance: pd.DataFrame) -> ChartImage:
     axes[0].set_ylabel("score std dev across runs")
     axes[0].set_title("Score variance by task (red = pass/fail flipped)")
 
-    axes[1].bar(range(len(ordered)), ordered["self_consistency"], color=PALETTE["single"])
+    axes[1].bar(range(len(ordered)), ordered["semantic_consistency"], color=PALETTE["single"])
     axes[1].set_xticks(range(len(ordered)))
     axes[1].set_xticklabels(
         ordered["task_id"].str.replace("answer_accuracy_knowledge_v1_", "", regex=False),
         rotation=75, ha="right", fontsize=7,
     )
     axes[1].set_ylim(0, 1.05)
-    axes[1].set_ylabel("avg pairwise similarity")
-    axes[1].set_title("Self-consistency of raw answers across runs")
+    axes[1].set_ylabel("1 − normalized semantic entropy")
+    axes[1].set_title("Semantic consistency of raw answers across runs")
 
     plt.tight_layout()
     chart = ChartImage(
         title="Chatbot repeat-run variance",
         caption=(
             "Left: how much each task's score moved across repeated runs (red bars flipped "
-            "pass/fail at least once). Right: how similar the N raw answers were to each other "
-            "(TF-IDF cosine similarity, not correctness) — a task can pass every run and still "
-            "score low here if it phrases the answer differently each time."
+            "pass/fail at least once). Right: whether the N raw answers cluster into one meaning "
+            "or several, via bidirectional-entailment clustering (Kuhn et al. 2024) rather than "
+            "lexical similarity — a task can pass every run and still show clusters here if it "
+            "means something different each time (or score 1.0 while phrasing it differently, "
+            "since entailment — unlike TF-IDF — recognizes paraphrase as equivalent)."
         ),
         base64_png=fig_to_base64(fig),
         section="results",
@@ -153,7 +195,7 @@ def agentic_variance(agentic_results: pd.DataFrame) -> pd.DataFrame:
     # Mind2Web task_ids are 0..n-1 *within each mode's own run*, not globally
     # unique — grouping by task_id alone would silently merge single- and
     # multi-agent results for "task 0" into one row. Group by the pair instead.
-    return variance_by_task(
+    var = variance_by_task(
         agentic_results,
         id_col=["task_id", "mode"],
         score_col="task_score",
@@ -161,6 +203,9 @@ def agentic_variance(agentic_results: pd.DataFrame) -> pd.DataFrame:
         extra_numeric_cols=["tool_f1", "n_tool_calls"],
         passthrough_cols=["website"],
     )
+    var = add_wilson_ci(var)
+    var = add_reliability_significance(var, min_acceptable_rate=MIN_ACCEPTABLE_PASS_RATE)
+    return var
 
 
 def plot_agentic_variance(variance: pd.DataFrame) -> ChartImage:
@@ -215,20 +260,27 @@ def plot_tool_consistency(variance: pd.DataFrame) -> ChartImage:
 def _chatbot_observations(chatbot_var: pd.DataFrame) -> list[str]:
     obs = []
     n_flips = int(chatbot_var["flips"].sum())
+    n_significant = int(chatbot_var["significant_below_floor"].sum())
     obs.append(
-        f"{n_flips} of {len(chatbot_var)} tasks flipped pass/fail across "
-        f"{CHATBOT_N_REPEATS} repeated runs of the identical prompt — with temperature "
-        "omitted for this reasoning-family model, meaning this variance isn't coming from "
-        "an explicit sampling knob we could just turn down."
+        f"{n_flips} of {len(chatbot_var)} tasks showed *any* pass/fail disagreement across "
+        f"{CHATBOT_N_REPEATS} repeated runs — but after correcting for testing {len(chatbot_var)} "
+        f"tasks simultaneously (Benjamini-Hochberg, target reliability floor "
+        f"{MIN_ACCEPTABLE_PASS_RATE:.0%}), only **{n_significant}** are statistically distinguishable "
+        "from acceptable reliability. Raw disagreement and statistically-corrected disagreement are "
+        "not the same claim — with temperature omitted for this reasoning-family model, this variance "
+        "isn't coming from an explicit sampling knob we could just turn down, but not every raw flip "
+        "is strong enough evidence to act on."
     )
-    low_consistency = chatbot_var[chatbot_var["self_consistency"] < 0.5]
-    if len(low_consistency):
+    low_meaning_consistency = chatbot_var[chatbot_var["semantic_consistency"] < 0.99]
+    high_cluster_low_flip = low_meaning_consistency[~low_meaning_consistency["flips"]]
+    if len(high_cluster_low_flip):
         obs.append(
-            f"{len(low_consistency)} task(s) had low self-consistency (< 0.5 average pairwise "
-            "similarity) despite mostly passing — the model answers correctly every time but "
-            "phrases it differently enough that a naive text-diff would flag it as unstable. "
-            "Pass-rate alone would have missed this; that's why self-consistency is tracked "
-            "as its own signal, not folded into pass/fail."
+            f"{len(high_cluster_low_flip)} task(s) passed every run yet still split into more than "
+            "one meaning-cluster under bidirectional-entailment scoring — the model reaches a "
+            "*passing* score every time but doesn't always mean the same thing when it does. "
+            "Pass-rate alone would have missed this entirely; it's exactly the case semantic "
+            "consistency (Kuhn et al. 2024) is meant to catch and TF-IDF similarity was not "
+            "reliably catching before."
         )
     return obs
 
@@ -248,6 +300,7 @@ def _agentic_observations(agentic_var: pd.DataFrame) -> list[str]:
         )
     for mode, group in agentic_var.groupby("mode"):
         n_flips = int(group["flips"].sum())
+        n_significant = int(group["significant_below_floor"].sum())
         detail = (
             f"average tool_f1 std dev {group['tool_f1_std'].mean():.2f}"
             if not tool_f1_flat
@@ -255,7 +308,10 @@ def _agentic_observations(agentic_var: pd.DataFrame) -> list[str]:
         )
         obs.append(
             f"{mode}-agent: {n_flips} of {len(group)} tasks flipped pass/fail across "
-            f"{AGENTIC_N_REPEATS} repeated runs; {detail}."
+            f"{AGENTIC_N_REPEATS} repeated runs ({n_significant} significant after BH correction "
+            f"at a {MIN_ACCEPTABLE_PASS_RATE:.0%} reliability floor — with only 5 tasks per mode, "
+            "this correction has little power, so treat raw and corrected counts as similarly "
+            f"weak evidence here, not a real disagreement between them); {detail}."
         )
     return obs
 
@@ -286,8 +342,13 @@ def build_report(
         "Build a controlled ablation (same task, orchestration disabled vs. enabled) to actually "
         "isolate how much variance the harness adds on top of the model's own — the honest gap "
         "flagged in the observations above.",
-        "Extend self-consistency scoring to semantic (embedding-based) similarity instead of "
-        "TF-IDF, which will under-count paraphrases that use very different vocabulary.",
+        "The bidirectional-entailment check currently uses this repo's own target model as the "
+        "judge — the same same-model-family caveat noted in scenario 1's judge review applies "
+        "here too. A dedicated NLI model (e.g. DeBERTa-MNLI, as Kuhn et al. 2024 use) would be a "
+        "genuinely independent check, at the cost of a new ML dependency.",
+        f"{MIN_ACCEPTABLE_PASS_RATE:.0%} is a stated policy choice for the reliability floor, not "
+        "something derived from data — revisit it once there's a real SLA or business requirement "
+        "to calibrate against.",
     ]
 
     return ScenarioReport(
@@ -311,11 +372,14 @@ def build_report(
             "`reporting/repeat_run.py`'s generic repeat harness. Agentic: a new adapter "
             "(`adapters/agent_otel.py`) onto `multi_agent_otel_eval`'s `evaluate_batch()`, run N "
             "times on a fixed Mind2Web task subset in both single- and multi-agent mode. Both "
-            "tracks share the same variance-scoring function "
-            "(`reporting.repeat_run.variance_by_task`), configured with different column names "
-            "rather than duplicated — the chatbot track adds self-consistency of the raw text "
-            "answers; the agentic track adds tool_f1 variance instead, since comparing raw agent "
-            "trajectories as text wouldn't be the right notion of 'consistent action.'"
+            "tracks share the same base variance function (`variance_by_task`) plus two "
+            "statistical layers on top — Wilson confidence intervals on the pass rate, and "
+            "Benjamini-Hochberg-corrected significance testing against a stated reliability floor "
+            "— configured with different column names rather than duplicated. The chatbot track "
+            "additionally adds semantic consistency (bidirectional-entailment clustering, Kuhn et "
+            "al. 2024) on the raw text answers; the agentic track adds tool_f1 variance instead, "
+            "since comparing raw agent trajectories as text wouldn't be the right notion of "
+            "'consistent action.'"
         ),
         data_sections=[
             DataSection(
@@ -337,9 +401,17 @@ def build_report(
             ),
         ],
         key_metrics=[
-            Metric(value=f"{overall_flip_rate_chat:.0%}", label="Chatbot tasks that flipped pass/fail"),
-            Metric(value=f"{overall_flip_rate_agent:.0%}", label="Agentic tasks that flipped pass/fail"),
-            Metric(value=f"{chatbot_var['self_consistency'].mean():.2f}", label="Avg chatbot self-consistency"),
+            Metric(
+                value=f"{int(chatbot_var['significant_below_floor'].sum())}/{len(chatbot_var)}",
+                label="Chatbot tasks significantly below floor",
+                sublabel=f"{overall_flip_rate_chat:.0%} raw flip rate, {len(chatbot_var)} tasks tested",
+            ),
+            Metric(
+                value=f"{int(agentic_var['significant_below_floor'].sum())}/{len(agentic_var)}",
+                label="Agentic tasks significantly below floor",
+                sublabel=f"{overall_flip_rate_agent:.0%} raw flip rate, {len(agentic_var)} task/modes tested",
+            ),
+            Metric(value=f"{chatbot_var['semantic_consistency'].mean():.2f}", label="Avg chatbot semantic consistency"),
             Metric(value=f"{agentic_var['tool_f1_std'].mean():.2f}", label="Avg agentic tool_f1 std dev"),
         ],
         results_tables=[

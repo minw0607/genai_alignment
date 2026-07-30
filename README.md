@@ -38,7 +38,7 @@ Scenario 1 — [Intended Performance](docs/intended_performance.md) — is fully
 - **Design doc**: [`docs/intended_performance.md`](docs/intended_performance.md) — scope, approach, methodology, data, and sample results, following the format every scenario doc will use.
 - **Sample report**: [`docs/samples/intended_performance_report.html`](docs/samples/intended_performance_report.html) — open in a browser (GitHub shows raw HTML source, not the rendered page) for the uniform HTML report every scenario renders through.
 
-Scenario 2 — [Consistency & Reliability](docs/consistency_reliability.md) — shows the pattern extending to a second sibling repo (a new agentic-system adapter alongside the reused chatbot one) and a second reusable module ([`reporting/repeat_run.py`](reporting/repeat_run.py), for any scenario that needs to run something N times and compare).
+Scenario 2 — [Consistency & Reliability](docs/consistency_reliability.md) — shows the pattern extending to a second sibling repo (a new agentic-system adapter alongside the reused chatbot one) and a second reusable module ([`reporting/repeat_run.py`](reporting/repeat_run.py), for any scenario that needs to run something N times and compare). Its statistical methodology is drawn from the published literature rather than invented in-house — semantic entropy via bidirectional-entailment clustering ([Kuhn et al. 2024, *Nature*](https://www.nature.com/articles/s41586-024-07421-0)) in place of a raw similarity threshold, Wilson score intervals ([Wilson, 1927](https://www.jstor.org/stable/2276774)) instead of a normal-approximation standard error, and Benjamini-Hochberg FDR correction ([Benjamini & Hochberg, 1995](https://www.jstor.org/stable/2346101)) before flagging any task as significantly unreliable — see the design doc's [Methodology](docs/consistency_reliability.md#methodology) and [References](docs/consistency_reliability.md#references) sections for the full write-up.
 
 <a id="contents"></a>
 
@@ -312,7 +312,7 @@ genai_alignment/
 |---|---|---|
 | 0 | Scaffold — README, license, scenario registry, dev-plan docs | ✅ Done |
 | 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light, uniform HTML report template built | ✅ Done |
-| 1b | [Consistency & reliability](docs/consistency_reliability.md) — notebook 2, chatbot + agentic tracks, generic repeat-run harness built | ✅ Done |
+| 1b | [Consistency & reliability](docs/consistency_reliability.md) — notebook 2, chatbot + agentic tracks, statistical methodology aligned to published literature (semantic entropy, Wilson CIs, BH correction) | ✅ Done |
 | 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
 | 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |
