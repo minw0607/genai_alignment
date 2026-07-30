@@ -28,11 +28,22 @@ That is an *alignment* question, not a capability or attack question. It sits cl
 
 **This repo does not reimplement evaluation machinery that already exists.** It is a thin scenario-taxonomy, adapter, and reporting layer over a small ecosystem of sibling repos that already do the deep work — see [Where This Fits](#where-this-fits). New work here is concentrated where a real gap exists: objective-drift, boundary/permission, drift-detection, fail-safe, autonomy/oversight-gating, and third-party/vendor-agent testing (see [Scenario Library](#scenario-library)).
 
+<a id="worked-example"></a>
+
+## 🎬 Worked Example
+
+Scenario 1 — [Intended Performance](docs/intended_performance.md) — is fully built and is the reference for every scenario that follows:
+
+- **Notebook**: [`notebooks/01_intended_performance.ipynb`](notebooks/01_intended_performance.ipynb) — code-light (39 lines across all cells); the actual logic lives in [`scenarios/intended_performance.py`](scenarios/intended_performance.py).
+- **Design doc**: [`docs/intended_performance.md`](docs/intended_performance.md) — scope, approach, methodology, data, and sample results, following the format every scenario doc will use.
+- **Sample report**: [`docs/samples/intended_performance_report.html`](docs/samples/intended_performance_report.html) — open in a browser (GitHub shows raw HTML source, not the rendered page) for the uniform HTML report every scenario renders through.
+
 <a id="contents"></a>
 
 ## 📌 Contents
 
 - [Overview](#overview)
+- [Worked Example](#worked-example)
 - [Setup](#setup)
 - [Where This Fits](#where-this-fits)
 - [Scenario Library](#scenario-library)
@@ -90,7 +101,7 @@ Adapters call into the sibling repos as installed packages or their published AP
 
 Scenarios are organized into three tiers, ordered from foundational behavior to enterprise/agentic risk. The library is a **living, versioned dataset** (not hardcoded logic) — new scenarios are added as rows, never as rewrites.
 
-Each scenario gets its own design doc under `docs/` — what it is, why it matters, how we test it, what data is used, and examples with sample results once a scenario has been run — linked from the tables below as it's written. See [`docs/intended_performance.md`](docs/intended_performance.md) and [`docs/drift_detection.md`](docs/drift_detection.md) for the format.
+Each scenario gets its own design doc under `docs/` — Scope, Approach, Methodology, Data, and Sample Results once a scenario has been run — linked from the tables below as it's written. See [`docs/intended_performance.md`](docs/intended_performance.md) for the format a run scenario follows; [`docs/drift_detection.md`](docs/drift_detection.md) predates a build and follows the source design diagram's own shape (Risk/Goal/Audit Question) instead — it'll converge to the same template once that scenario is actually built.
 
 ### Tier 1 — Foundational behavior
 
@@ -285,7 +296,8 @@ genai_alignment/
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Scaffold — README, license, scenario registry, dev-plan docs | ✅ Done |
-| 1 | Tier 1 adapters — [intended performance](docs/intended_performance.md) (notebook 1, live, uniform HTML report template built) + consistency/reliability harness | 🛠️ In progress |
+| 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light, uniform HTML report template built | ✅ Done |
+| 1b | Consistency & reliability harness (notebook 2) | 🛠️ In progress |
 | 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
 | 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |
