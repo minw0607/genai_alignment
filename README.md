@@ -38,6 +38,8 @@ Scenario 1 — [Intended Performance](docs/intended_performance.md) — is fully
 - **Design doc**: [`docs/intended_performance.md`](docs/intended_performance.md) — scope, approach, methodology, data, and sample results, following the format every scenario doc will use.
 - **Sample report**: [`docs/samples/intended_performance_report.html`](docs/samples/intended_performance_report.html) — open in a browser (GitHub shows raw HTML source, not the rendered page) for the uniform HTML report every scenario renders through.
 
+Scenario 2 — [Consistency & Reliability](docs/consistency_reliability.md) — shows the pattern extending to a second sibling repo (a new agentic-system adapter alongside the reused chatbot one) and a second reusable module ([`reporting/repeat_run.py`](reporting/repeat_run.py), for any scenario that needs to run something N times and compare).
+
 <a id="contents"></a>
 
 ## 📌 Contents
@@ -70,6 +72,14 @@ cp .env.example .env   # then fill in your Azure OpenAI values
 
 Scenario fixtures that sample a public benchmark (e.g. `scenarios/fixtures/public_benchmark_sample.jsonl`) are **frozen snapshots committed to this repo** — running the notebooks needs nothing beyond the `pip install` above. Regenerating a sample from scratch is the only time you'd need a local sibling clone of the source repo (its dataset files aren't part of the pip package); see that fixture's `_manifest.json` for the exact commit and sampling parameters used.
 
+Agentic-system scenarios (e.g. [consistency & reliability](docs/consistency_reliability.md)'s agentic track) depend on [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval), which has no `pyproject.toml` and isn't pip-installable — clone it as a sibling of this repo's parent directory instead:
+
+```bash
+cd .. && git clone https://github.com/minw0607/multi_agent_otel_eval Agent
+```
+
+`adapters/agent_otel.py` looks for it at `../Agent` relative to this repo. Its own runtime dependencies (LangChain, LangGraph, etc.) are a separate install: `pip install -e ".[agentic]"`.
+
 <a id="where-this-fits"></a>
 
 ## 🧩 Where This Fits
@@ -80,7 +90,7 @@ Testing whether an enterprise GenAI system is *aligned* draws on capability meas
 |---|---|---|
 | [Intended performance](docs/intended_performance.md) | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — answer accuracy, instruction following, reasoning | Adapter |
 | Objective alignment | *none* — no repo tests mandate/scope drift over a multi-step task | Native |
-| Consistency & reliability | `genai_capability_bench` (partial) — no repeat-run variance metric yet | Adapter + extend |
+| [Consistency & reliability](docs/consistency_reliability.md) | `genai_capability_bench` (chatbot track, unchanged) + [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) (new agentic-track adapter) | Adapter + extend |
 | Boundary / permission | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
 | Adversarial inputs | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — adversarial NLP, jailbreak, prompt injection | Adapter |
 | Drift detection | *none* — no before/after regression harness across model/tool versions | Native |
@@ -109,7 +119,7 @@ Each scenario gets its own design doc under `docs/` — Scope, Approach, Methodo
 |---|---|---|
 | [Intended performance](docs/intended_performance.md) | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely |
 | Objective alignment | Behavior drifts from mandate or pursues unintended sub-goals | Stays aligned to objective & scope over a task and over time |
-| Consistency & reliability | Same input yields different output; hallucination / variance | Repeatable, consistent outputs for equivalent inputs |
+| [Consistency & reliability](docs/consistency_reliability.md) | Same input yields different output; hallucination / variance | Repeatable, consistent outputs for equivalent inputs |
 
 ### Tier 2 — Boundaries & robustness
 
@@ -274,6 +284,7 @@ genai_alignment/
 ├── evidence/                   # Per-run artifact capture + tracing (gitignored data)
 ├── reporting/                  # Cross-scenario reporting — uniform, not per-scenario code
 │   ├── report.py               # combine_runs, judge_borderline (multi-dataset + LLM-judge review)
+│   ├── repeat_run.py           # repeat_runs, variance_by_task (N-run harness — consistency & drift detection both use this)
 │   ├── html_report.py          # ScenarioReport dataclass + render_report/save_report
 │   └── templates/
 │       └── scenario_report.html.j2   # The one HTML template every scenario renders through
@@ -297,7 +308,7 @@ genai_alignment/
 |---|---|---|
 | 0 | Scaffold — README, license, scenario registry, dev-plan docs | ✅ Done |
 | 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light, uniform HTML report template built | ✅ Done |
-| 1b | Consistency & reliability harness (notebook 2) | 🛠️ In progress |
+| 1b | [Consistency & reliability](docs/consistency_reliability.md) — notebook 2, chatbot + agentic tracks, generic repeat-run harness built | ✅ Done |
 | 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
 | 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |

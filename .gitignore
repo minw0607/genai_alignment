@@ -10,4 +10,5 @@ outputs/runs/*
 !outputs/runs/.gitkeep
 outputs/reports/*
 !outputs/reports/.gitkeep
+outputs/agent_runs/
 *.egg-info/
