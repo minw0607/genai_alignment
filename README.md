@@ -59,6 +59,8 @@ cp .env.example .env   # then fill in your Azure OpenAI values
 
 `pip install -e .` pulls in `genai_capability_bench` automatically (it's declared in `pyproject.toml`) — but only into the environment you ran the command in. If you use a named conda kernel (e.g. `adv_env`), run this with that environment's `pip`, not your system one, and confirm the notebook's kernel selector matches it before running.
 
+**`TARGET_MODEL` vs. `JUDGE_MODEL`, a repo-wide convention:** any scenario that scores output with an LLM judge (borderline-answer review, semantic-consistency entailment checks, an agentic evaluator's `judge_llm`) reads `JUDGE_MODEL` from `.env` for that judge — a deployment that must be genuinely different from `TARGET_MODEL`, so scoring isn't a model judging its own output. If `JUDGE_MODEL` is unset, scenario code falls back to `TARGET_MODEL` (same-model-family judging — a documented limitation, not the intended setup).
+
 Scenario fixtures that sample a public benchmark (e.g. `scenarios/fixtures/public_benchmark_sample.jsonl`) are **frozen snapshots committed to this repo** — running the notebooks needs nothing beyond the `pip install` above. Regenerating a sample from scratch is the only time you'd need a local sibling clone of the source repo (its dataset files aren't part of the pip package); see that fixture's `_manifest.json` for the exact commit and sampling parameters used.
 
 Agentic-system scenarios (e.g. [consistency & reliability](docs/consistency_reliability.md)'s agentic track) depend on [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval), which has no `pyproject.toml` and isn't pip-installable — clone it as a sibling of this repo's parent directory instead:

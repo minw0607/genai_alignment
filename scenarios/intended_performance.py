@@ -185,10 +185,13 @@ def plot_pass_rate(results: pd.DataFrame) -> ChartImage:
 # ---------------------------------------------------------------- Judge review
 
 def judge_review(results: pd.DataFrame, target_model: str) -> pd.DataFrame:
+    """`target_model` is only a fallback — the judge should be a genuinely
+    different model from the one under test, so this reads JUDGE_MODEL from
+    the environment first (see .env.example)."""
     judge_spec = ModelSpec(
         name="judge",
         provider="azure_openai",
-        model=target_model,
+        model=os.environ.get("JUDGE_MODEL", target_model),
         temperature=None,
         max_tokens=200,
         token_parameter="max_completion_tokens",

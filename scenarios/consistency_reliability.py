@@ -78,11 +78,14 @@ OUTPUT_DIR = "outputs/runs/consistency_reliability"
 
 def build_judge_client(target_model: str):
     """Client for semantic_consistency's bidirectional-entailment checks —
-    same reasoning-family-safe config as scenario 1's judge_review client."""
+    same reasoning-family-safe config as scenario 1's judge_review client.
+    `target_model` is only a fallback — reads JUDGE_MODEL from the environment
+    first, so the judge is a genuinely different model from the one under
+    test (see .env.example)."""
     judge_spec = ModelSpec(
         name="judge",
         provider="azure_openai",
-        model=target_model,
+        model=os.environ.get("JUDGE_MODEL", target_model),
         temperature=None,
         max_tokens=200,
         token_parameter="max_completion_tokens",
@@ -367,13 +370,16 @@ def build_report(
     )
 
     next_steps = [
+        "Increase agentic repeats beyond 5 — independent re-runs under the same judge have "
+        "classified different specific tasks as unstable vs. consistently_failing, direct "
+        "evidence n=5 is too small for stable per-task categorization on this track.",
         "Build a controlled ablation (same task, orchestration disabled vs. enabled) to actually "
         "isolate how much variance the harness adds on top of the model's own — the honest gap "
         "flagged in the observations above.",
-        "The bidirectional-entailment check currently uses this repo's own target model as the "
-        "judge — the same same-model-family caveat noted in scenario 1's judge review applies "
-        "here too. A dedicated NLI model (e.g. DeBERTa-MNLI, as Kuhn et al. 2024 use) would be a "
-        "genuinely independent check, at the cost of a new ML dependency.",
+        "The bidirectional-entailment check uses an LLM-judge prompt (JUDGE_MODEL, a different "
+        "deployment than the target model) rather than a dedicated NLI model. A dedicated NLI "
+        "model (e.g. DeBERTa-MNLI, as Kuhn et al. 2024 use) would remove LLM-judge variance from "
+        "the entailment check itself, at the cost of a new ML dependency.",
         f"{MIN_ACCEPTABLE_PASS_RATE:.0%} is a stated policy choice for the reliability floor, not "
         "something derived from data — revisit it once there's a real SLA or business requirement "
         "to calibrate against.",
@@ -443,6 +449,11 @@ def build_report(
                 value=f"{int((agentic_var['reliability_category'] == 'unstable').sum())}/{len(agentic_var)}",
                 label="Agentic tasks genuinely unstable",
                 sublabel=f"{overall_flip_rate_agent:.0%} raw flip rate, {len(agentic_var)} task/modes tested",
+            ),
+            Metric(
+                value=f"{int((agentic_var['reliability_category'] == 'consistently_failing').sum())}/{len(agentic_var)}",
+                label="Agentic tasks consistently failing",
+                sublabel="capability gap or scoring artifact, not instability",
             ),
             Metric(value=f"{chatbot_var['semantic_consistency'].mean():.2f}", label="Avg chatbot semantic consistency"),
             Metric(value=f"{agentic_var['tool_f1_std'].mean():.2f}", label="Avg agentic tool_f1 std dev"),

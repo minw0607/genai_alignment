@@ -33,7 +33,7 @@ Reuses `genai_capability_bench`'s `AnswerAccuracyEvaluator` end to end — [`ada
 
 A response is scored against a **scoring profile** — `short_answer_qa` (`max(exact_match, 0.65·token_f1 + 0.35·semantic_similarity)`) for open-answer questions, `multiple_choice` (`exact_match`) for MMLU/ARC-derived questions. A task **passes** at a score ≥ **0.70**.
 
-**Every task scoring below that threshold gets a second, independent look** from an LLM judge (`genai_capability_bench`'s `judge_with_rubric`), asked a plain-language question — *"is this substantively correct, regardless of phrasing?"* — rather than being taken at face value. This exists because the deterministic metrics above are lexical/semantic *proxies* for correctness, and proxies can be wrong in both directions: they can under-credit a correct-but-verbose answer, and they can (correctly) flag a genuinely wrong one. **Caveat, stated plainly:** the judge is the same model family as the target being tested — a structured second read, not an independent adjudication. A disagreement between judge and human reviewer should always win in the human's favor.
+**Every task scoring below that threshold gets a second, independent look** from an LLM judge (`genai_capability_bench`'s `judge_with_rubric`), asked a plain-language question — *"is this substantively correct, regardless of phrasing?"* — rather than being taken at face value. This exists because the deterministic metrics above are lexical/semantic *proxies* for correctness, and proxies can be wrong in both directions: they can under-credit a correct-but-verbose answer, and they can (correctly) flag a genuinely wrong one. The judge is a genuinely different deployment from the target model under test (`JUDGE_MODEL` in `.env`, distinct from `TARGET_MODEL`) — not a same-family self-review. A disagreement between judge and human reviewer should always win in the human's favor.
 
 ## Data
 
@@ -58,20 +58,20 @@ The public benchmark sample exists for breadth and external comparability — a 
 
 ## Sample Results
 
-Full report with charts: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Most recent run — Azure OpenAI, `gpt-5-5-20260424-gs`, API version `2025-04-01-preview`:
+Full report with charts: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Most recent run — Azure OpenAI target `gpt-5-5-20260424-gs`, judged by an independent deployment (`JUDGE_MODEL=gpt-5-6-terra-latest-gs`), API version `2025-04-01-preview`:
 
 | Sub-dataset | n | avg score | pass rate |
 |---|---|---|---|
-| Custom golden set | 10 | 0.887 | 80.0% |
-| Public benchmark sample | 30 | 0.860 | 86.7% |
-| **Overall** | **40** | **0.87** | **85.0%** |
+| Custom golden set | 10 | 0.872 | 70.0% |
+| Public benchmark sample | 30 | 0.858 | 86.7% |
+| **Overall** | **40** | **0.86** | **82.5%** |
 
-**6 tasks scored below threshold; the judge review split cleanly by sub-dataset, not randomly:**
+**7 tasks scored below threshold; the judge review split cleanly by sub-dataset, not randomly:**
 
-- **2/2 custom-golden-set sub-threshold cases were scoring-metric artifacts, not failures.** e.g. `ip-08`: *"Yes. The flight is reimbursable because the portal outage was confirmed by IT."* — correct, but scored 0.68 because the model's phrasing didn't lexically overlap enough with the golden set's shorter reference answers.
-- **4/4 public-benchmark sub-threshold cases were confirmed genuinely wrong.** Two were real wrong picks on ARC science items — one worth a caveat of its own: *"which substance retains the most energy from the Sun"* (gold answer "sand") is scientifically debatable on specific-heat-capacity grounds, a reminder that a public benchmark's gold answer isn't automatically ground truth either.
+- **3/3 custom-golden-set sub-threshold cases were scoring-metric artifacts, not failures.** e.g. `ip-08`: *"Yes. Since the portal outage was confirmed by IT, the flight is reimbursable under the stated exception."* — correct, but scored below threshold because the model's phrasing didn't lexically overlap enough with the golden set's shorter reference answers. The judge upgraded all 3 to correct.
+- **4/4 public-benchmark sub-threshold cases were confirmed genuinely wrong.** Real wrong picks on ARC science and MMLU-logic items — one worth a caveat of its own: a "which substance retains the most energy from the Sun" item (gold answer "sand") is scientifically debatable on specific-heat-capacity grounds, a reminder that a public benchmark's gold answer isn't automatically ground truth either.
 
-**A recurring technical finding, confirmed across three separate runs, not a one-off:** 1–2 tasks per run return an empty completion (no visible output at all, not an error) on the public benchmark sample specifically. The working hypothesis is that the 300-token `max_completion_tokens` budget is tight enough for this reasoning-family model to exhaust it on internal reasoning before producing a visible answer. This is now the **top next step** for this scenario — increase the token budget and confirm the empty completions stop.
+**A recurring technical finding, confirmed across multiple separate runs, not a one-off:** 1–2 tasks per run return an empty completion (no visible output at all, not an error) on the public benchmark sample specifically. The working hypothesis is that the 300-token `max_completion_tokens` budget is tight enough for this reasoning-family model to exhaust it on internal reasoning before producing a visible answer. This is now the **top next step** for this scenario — increase the token budget and confirm the empty completions stop.
 
 **A finding that only shows up by re-running this notebook, not from a single pass:** an earlier run of this exact scenario against a different model in the gpt-5 family produced a materially different pass rate on the identical golden set. That's not a bug in this scenario's harness — it's a live instance of [Tier 2 — drift detection](../README.md#scenario-library) surfacing inside a Tier 1 test, and a concrete reason results here should be re-read after any model change, not assumed to carry over.
 

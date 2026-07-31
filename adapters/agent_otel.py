@@ -35,12 +35,15 @@ def _ensure_sibling_on_path() -> None:
 
 
 def _configure_env(target_model: str) -> None:
-    """Point the sibling repo's model roles at our target model, and fix a
-    reasoning-model quirk: this model rejects any temperature other than its
-    default (1) — multi_agent_otel_eval's LLM factory always passes an
-    explicit temperature, unlike the raw-completion clients elsewhere in this
-    repo that can omit it entirely, so the workaround here is forcing it to 1
-    rather than omitting it."""
+    """Point the sibling repo's agent role at our target model. JUDGE_MODEL is
+    left to come from .env (a genuinely different model from the one under
+    test, per repo convention — see .env.example) and only falls back to
+    target_model here if .env doesn't set it. Also fixes a reasoning-model
+    quirk: this model rejects any temperature other than its default (1) —
+    multi_agent_otel_eval's LLM factory always passes an explicit temperature,
+    unlike the raw-completion clients elsewhere in this repo that can omit it
+    entirely, so the workaround here is forcing it to 1 rather than omitting
+    it."""
     os.environ.setdefault("AGENT_MODEL", target_model)
     os.environ.setdefault("JUDGE_MODEL", target_model)
     os.environ.setdefault("AGENT_TEMPERATURE", "1")
