@@ -28,34 +28,13 @@ That is an *alignment* question, not a capability or attack question. It sits cl
 
 **This repo does not reimplement evaluation machinery that already exists.** It is a thin scenario-taxonomy, adapter, and reporting layer over a small ecosystem of sibling repos that already do the deep work — see [Where This Fits](#where-this-fits). New work here is concentrated where a real gap exists: objective-drift, boundary/permission, drift-detection, fail-safe, autonomy/oversight-gating, and third-party/vendor-agent testing (see [Scenario Library](#scenario-library)).
 
-<a id="worked-example"></a>
-
-## 🎬 Worked Example
-
-Scenario 1 — [Intended Performance](docs/intended_performance.md) — is fully built and is the reference for every scenario that follows:
-
-- **Notebook**: [`notebooks/01_intended_performance.ipynb`](notebooks/01_intended_performance.ipynb) — code-light (39 lines across all cells); the actual logic lives in [`scenarios/intended_performance.py`](scenarios/intended_performance.py).
-- **Design doc**: [`docs/intended_performance.md`](docs/intended_performance.md) — scope, approach, methodology, data, and sample results, following the format every scenario doc will use.
-- **Sample report**: [`docs/samples/intended_performance_report.html`](docs/samples/intended_performance_report.html) — open in a browser (GitHub shows raw HTML source, not the rendered page) for the uniform HTML report every scenario renders through.
-
-Scenario 2 — [Consistency & Reliability](docs/consistency_reliability.md) — shows the pattern extending to a second sibling repo (a new agentic-system adapter alongside the reused chatbot one) and a second reusable module ([`reporting/repeat_run.py`](reporting/repeat_run.py), for any scenario that needs to run something N times and compare).
-
-- **Notebook**: [`notebooks/02_consistency_reliability.ipynb`](notebooks/02_consistency_reliability.ipynb) — code-light; logic lives in [`scenarios/consistency_reliability.py`](scenarios/consistency_reliability.py).
-- **Design doc**: [`docs/consistency_reliability.md`](docs/consistency_reliability.md) — scope, approach, methodology, data, and sample results.
-- **Sample report**: [`docs/samples/consistency_reliability_report.html`](docs/samples/consistency_reliability_report.html) — open in a browser (GitHub shows raw HTML source, not the rendered page).
-
-**Methodology.** Drawn from the published literature rather than invented in-house: semantic entropy via bidirectional-entailment clustering ([Kuhn et al. 2024, *Nature*](https://www.nature.com/articles/s41586-024-07421-0)) in place of a raw similarity threshold (the older TF-IDF metric is kept as an explicit opt-in, not the default); Wilson score intervals ([Wilson, 1927](https://www.jstor.org/stable/2276774)) for pass-rate confidence at small n; and Benjamini-Hochberg FDR correction ([Benjamini & Hochberg, 1995](https://www.jstor.org/stable/2346101)) before flagging any task as significantly below the reliability floor. On top of that significance test, `reliability_category` splits what a single "significant" flag would otherwise conflate: **`unstable`** (significant *and* the task actually flipped pass/fail across runs — real instability), **`consistently_failing`** (significant but never flipped — the same wrong answer every run, a capability gap or scoring artifact riding along on the same statistical test, not instability), and **`reliable`** (not significant). See the design doc's [Methodology](docs/consistency_reliability.md#methodology) and [References](docs/consistency_reliability.md#references) sections for the full write-up.
-
-**Metrics reported.** Per-task: `semantic_consistency` + `n_meaning_clusters` (chatbot) or `tool_f1` variance (agentic), `pass_rate` with Wilson CI, BH-corrected `reliability_p_value`/`significant_below_floor`, and `reliability_category`. Rolled up in the report as: tasks genuinely unstable, tasks consistently failing, and average semantic consistency / tool-F1 std dev per track.
-
-**Sample results** (Azure OpenAI, `gpt-5-5-20260424-gs`) — chatbot: 40 tasks × 5 repeats, 0/40 genuinely unstable, 3/40 consistently failing (avg semantic consistency 0.91); agentic: 5 Mind2Web tasks × 5 repeats × 2 modes, 0/10 genuinely unstable, 0/10 consistently failing (avg `tool_f1` std ≈ 0.01). The raw flip count varies a little run to run since LLM calls are themselves non-deterministic — what's stable across runs is the `reliability_category` split itself, which is the point of having it. Full numbers and discussion in the design doc's [Sample Results](docs/consistency_reliability.md#sample-results) section.
+Two scenarios are fully built end-to-end (notebook → design doc → sample report) and serve as the reference for every scenario that follows: [Intended Performance](docs/intended_performance.md) and [Consistency & Reliability](docs/consistency_reliability.md). Each design doc carries its own notebook link, methodology, metrics, and sample results — see [Scenario Library](#scenario-library) below for the full list and build status.
 
 <a id="contents"></a>
 
 ## 📌 Contents
 
 - [Overview](#overview)
-- [Worked Example](#worked-example)
 - [Setup](#setup)
 - [Where This Fits](#where-this-fits)
 - [Scenario Library](#scenario-library)
