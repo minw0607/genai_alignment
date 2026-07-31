@@ -289,6 +289,42 @@ def add_reliability_significance(
     return result
 
 
+def add_reliability_category(variance: pd.DataFrame) -> pd.DataFrame:
+    """Split `significant_below_floor` into what it's actually conflating.
+
+    A task fails the reliability floor test two structurally different ways,
+    and `significant_below_floor` alone doesn't distinguish them:
+
+    - **unstable** (`significant_below_floor` and `flips`): the task's outcome
+      genuinely varies run to run — this is what a consistency scenario is
+      actually testing for.
+    - **consistently_failing** (`significant_below_floor` and not `flips`):
+      the task fails (or passes) *every single run, identically* — pass_rate
+      of exactly 0.0 is common here. That's not instability, it's a
+      repeatable result: either a genuine capability gap (wrong the same way
+      every time) or a scoring-threshold artifact (a correct answer that
+      consistently scores just under the pass threshold) riding along on the
+      same significance test. Either is a real finding, but not a
+      consistency finding — pair this with a semantic_consistency check
+      (near 1.0 here means "confidently gives the same answer every time,"
+      which further separates capability gap from scoring artifact) or a
+      judge review to tell those two apart.
+    - **reliable**: not significant — no strong evidence this task falls
+      below the stated floor.
+
+    Requires `add_reliability_significance` to have been called first
+    (needs `significant_below_floor`) — call this after it, on the same table.
+    """
+    def _classify(row) -> str:
+        if not row["significant_below_floor"]:
+            return "reliable"
+        return "unstable" if row["flips"] else "consistently_failing"
+
+    result = variance.copy()
+    result["reliability_category"] = result.apply(_classify, axis=1)
+    return result
+
+
 def variance_by_task(
     combined: pd.DataFrame,
     id_col: str | list[str],

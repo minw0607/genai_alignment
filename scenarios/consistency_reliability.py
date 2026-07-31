@@ -43,6 +43,7 @@ from reporting.artifacts import Artifact
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import (
     add_pairwise_consistency,
+    add_reliability_category,
     add_reliability_significance,
     add_semantic_consistency,
     add_wilson_ci,
@@ -135,6 +136,7 @@ def chatbot_variance(
         var = add_pairwise_consistency(var, chatbot_results, id_col="task_id", text_col="actual_output")
     var = add_wilson_ci(var)
     var = add_reliability_significance(var, min_acceptable_rate=MIN_ACCEPTABLE_PASS_RATE)
+    var = add_reliability_category(var)
     return var
 
 
@@ -222,6 +224,7 @@ def agentic_variance(agentic_results: pd.DataFrame) -> pd.DataFrame:
     )
     var = add_wilson_ci(var)
     var = add_reliability_significance(var, min_acceptable_rate=MIN_ACCEPTABLE_PASS_RATE)
+    var = add_reliability_category(var)
     return var
 
 
@@ -277,16 +280,21 @@ def plot_tool_consistency(variance: pd.DataFrame) -> ChartImage:
 def _chatbot_observations(chatbot_var: pd.DataFrame) -> list[str]:
     obs = []
     n_flips = int(chatbot_var["flips"].sum())
-    n_significant = int(chatbot_var["significant_below_floor"].sum())
+    counts = chatbot_var["reliability_category"].value_counts()
+    n_unstable = int(counts.get("unstable", 0))
+    n_consistently_failing = int(counts.get("consistently_failing", 0))
     obs.append(
         f"{n_flips} of {len(chatbot_var)} tasks showed *any* pass/fail disagreement across "
-        f"{CHATBOT_N_REPEATS} repeated runs — but after correcting for testing {len(chatbot_var)} "
-        f"tasks simultaneously (Benjamini-Hochberg, target reliability floor "
-        f"{MIN_ACCEPTABLE_PASS_RATE:.0%}), only **{n_significant}** are statistically distinguishable "
-        "from acceptable reliability. Raw disagreement and statistically-corrected disagreement are "
-        "not the same claim — with temperature omitted for this reasoning-family model, this variance "
-        "isn't coming from an explicit sampling knob we could just turn down, but not every raw flip "
-        "is strong enough evidence to act on."
+        f"{CHATBOT_N_REPEATS} repeated runs, but a raw flip and a real consistency finding aren't the "
+        f"same claim. After Benjamini-Hochberg correction against an {MIN_ACCEPTABLE_PASS_RATE:.0%} "
+        f"reliability floor: **{n_unstable} genuinely unstable** (significant *and* actually flipped — "
+        f"this is what this scenario tests for) and **{n_consistently_failing} consistently failing** "
+        "(significant, but never flipped — the same wrong or under-scored answer every single run, "
+        "which is a capability-gap or scoring-artifact finding riding along on the same statistical "
+        "test, not instability). Check `semantic_consistency` on the consistently-failing rows: near "
+        "1.0 means the model confidently gives the same answer every time — wrong every time is a "
+        "capability gap, and worth a judge check (as scenario 1 does) to rule out a scoring-threshold "
+        "artifact before calling it that."
     )
     low_meaning_consistency = chatbot_var[chatbot_var["semantic_consistency"] < 0.99]
     high_cluster_low_flip = low_meaning_consistency[~low_meaning_consistency["flips"]]
@@ -317,7 +325,9 @@ def _agentic_observations(agentic_var: pd.DataFrame) -> list[str]:
         )
     for mode, group in agentic_var.groupby("mode"):
         n_flips = int(group["flips"].sum())
-        n_significant = int(group["significant_below_floor"].sum())
+        counts = group["reliability_category"].value_counts()
+        n_unstable = int(counts.get("unstable", 0))
+        n_consistently_failing = int(counts.get("consistently_failing", 0))
         detail = (
             f"average tool_f1 std dev {group['tool_f1_std'].mean():.2f}"
             if not tool_f1_flat
@@ -325,10 +335,11 @@ def _agentic_observations(agentic_var: pd.DataFrame) -> list[str]:
         )
         obs.append(
             f"{mode}-agent: {n_flips} of {len(group)} tasks flipped pass/fail across "
-            f"{AGENTIC_N_REPEATS} repeated runs ({n_significant} significant after BH correction "
-            f"at a {MIN_ACCEPTABLE_PASS_RATE:.0%} reliability floor — with only 5 tasks per mode, "
-            "this correction has little power, so treat raw and corrected counts as similarly "
-            f"weak evidence here, not a real disagreement between them); {detail}."
+            f"{AGENTIC_N_REPEATS} repeated runs — {n_unstable} genuinely unstable, "
+            f"{n_consistently_failing} consistently failing after BH correction at a "
+            f"{MIN_ACCEPTABLE_PASS_RATE:.0%} reliability floor (with only 5 tasks per mode, this "
+            "correction has little power, so treat these as weak signals, not settled findings); "
+            f"{detail}."
         )
     return obs
 
@@ -419,13 +430,18 @@ def build_report(
         ],
         key_metrics=[
             Metric(
-                value=f"{int(chatbot_var['significant_below_floor'].sum())}/{len(chatbot_var)}",
-                label="Chatbot tasks significantly below floor",
+                value=f"{int((chatbot_var['reliability_category'] == 'unstable').sum())}/{len(chatbot_var)}",
+                label="Chatbot tasks genuinely unstable",
                 sublabel=f"{overall_flip_rate_chat:.0%} raw flip rate, {len(chatbot_var)} tasks tested",
             ),
             Metric(
-                value=f"{int(agentic_var['significant_below_floor'].sum())}/{len(agentic_var)}",
-                label="Agentic tasks significantly below floor",
+                value=f"{int((chatbot_var['reliability_category'] == 'consistently_failing').sum())}/{len(chatbot_var)}",
+                label="Chatbot tasks consistently failing",
+                sublabel="capability gap or scoring artifact, not instability",
+            ),
+            Metric(
+                value=f"{int((agentic_var['reliability_category'] == 'unstable').sum())}/{len(agentic_var)}",
+                label="Agentic tasks genuinely unstable",
                 sublabel=f"{overall_flip_rate_agent:.0%} raw flip rate, {len(agentic_var)} task/modes tested",
             ),
             Metric(value=f"{chatbot_var['semantic_consistency'].mean():.2f}", label="Avg chatbot semantic consistency"),
