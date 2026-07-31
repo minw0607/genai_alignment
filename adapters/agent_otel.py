@@ -73,16 +73,26 @@ class AgentHarness:
             HealthMonitor,
             HierarchicalTracer,
             HybridEvaluator,
+            Mind2WebTask,
+            ToolCorrectnessEval,
             TracingManager,
+            SafetyValidator,
             create_baseline_agent,
             create_multi_agent,
             evaluate_batch,
             load_mind2web,
+            run_agent,
+            run_multi_agent,
         )
 
         Config.setup_dirs()
         self._evaluate_batch = evaluate_batch
         self._load_mind2web = load_mind2web
+        self._Mind2WebTask = Mind2WebTask
+        self._run_agent = run_agent
+        self._run_multi_agent = run_multi_agent
+        self._ToolCorrectnessEval = ToolCorrectnessEval
+        self._SafetyValidator = SafetyValidator
         self.config = Config
 
         self.tracing_manager = TracingManager()
@@ -124,3 +134,57 @@ class AgentHarness:
 
         results, _ = self._evaluate_batch(tasks, len(tasks), mode, **kwargs)
         return results
+
+    def run_with_transcript(self, tasks: list[dict], mode: str, verbose: bool = False) -> pd.DataFrame:
+        """Same scoring as run(), but also keeps each task's raw agent output text.
+
+        evaluate_batch() scores each task and discards the actual plan/trajectory —
+        fine when only the aggregate numbers matter, but the objective-alignment
+        scenario's drift-type judge needs to read what the agent actually said it
+        was doing, not just its score. This calls the same run_agent/run_multi_agent
+        + evaluator + ToolCorrectnessEval evaluate_batch() uses internally, one
+        level lower, so the transcript survives. Each task dict may carry a custom
+        "task_id" (e.g. a pressure-variant id) — falls back to its list position.
+        """
+        self.hier_tracer.reset()
+        self.tracing_manager.reset()
+        if self.health_monitor is not None:
+            self.health_monitor.reset()
+
+        rows = []
+        for i, task_dict in enumerate(tasks):
+            task = self._Mind2WebTask.from_dict(task_dict, idx=i)
+            if mode == "single":
+                output, trace = self._run_agent(
+                    task, self.agent, self.tracing_manager, self.config, self.hier_tracer
+                )
+            elif mode == "multi":
+                output, trace = self._run_multi_agent(
+                    task, self.multi_agents, self.hier_tracer, self.tracing_manager, self.config
+                )
+            else:
+                raise ValueError(f"mode must be 'single' or 'multi', got {mode!r}")
+
+            safety = self._SafetyValidator.validate_all(output, task.confirmed_task)
+            ev = self.evaluator.evaluate(output, task, safety)
+            tool = self._ToolCorrectnessEval.evaluate(output, task.action_reprs, trace.tool_calls)
+
+            if verbose:
+                status = "PASS" if ev.passed else "FAIL"
+                print(f"[{i+1}/{len(tasks)}] {task.website}: {status} score={ev.total_score:.2f}")
+
+            rows.append({
+                "task_id": task_dict.get("task_id", i),
+                "website": task.website,
+                "mode": mode,
+                "confirmed_task": task.confirmed_task,
+                "task_score": ev.total_score,
+                "task_passed": ev.passed,
+                "rule_score": ev.rule_score,
+                "llm_score": ev.llm_score,
+                "tool_f1": tool.f1,
+                "n_tool_calls": len(trace.tool_calls),
+                "agent_output": output,
+            })
+
+        return pd.DataFrame(rows)

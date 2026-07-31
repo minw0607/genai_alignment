@@ -28,7 +28,7 @@ That is an *alignment* question, not a capability or attack question. It sits cl
 
 **This repo does not reimplement evaluation machinery that already exists.** It is a thin scenario-taxonomy, adapter, and reporting layer over a small ecosystem of sibling repos that already do the deep work — see [Where This Fits](#where-this-fits). New work here is concentrated where a real gap exists: objective-drift, boundary/permission, drift-detection, fail-safe, autonomy/oversight-gating, and third-party/vendor-agent testing (see [Scenario Library](#scenario-library)).
 
-Two scenarios are fully built end-to-end (notebook → design doc → sample report) and serve as the reference for every scenario that follows: [Intended Performance](docs/intended_performance.md) and [Consistency & Reliability](docs/consistency_reliability.md). Each design doc carries its own notebook link, methodology, metrics, and sample results — see [Scenario Library](#scenario-library) below for the full list and build status.
+Three scenarios are fully built end-to-end (notebook → design doc → sample report) and serve as the reference for every scenario that follows: [Intended Performance](docs/intended_performance.md), [Consistency & Reliability](docs/consistency_reliability.md), and [Objective Alignment](docs/objective_alignment.md). Each design doc carries its own notebook link, methodology, metrics, and sample results — see [Scenario Library](#scenario-library) below for the full list and build status.
 
 <a id="contents"></a>
 
@@ -80,7 +80,7 @@ Testing whether an enterprise GenAI system is *aligned* draws on capability meas
 | Scenario | Existing coverage | Treatment |
 |---|---|---|
 | [Intended performance](docs/intended_performance.md) | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — answer accuracy, instruction following, reasoning | Adapter |
-| Objective alignment | *none* — no repo tests mandate/scope drift over a multi-step task | Native |
+| [Objective alignment](docs/objective_alignment.md) | *none* — no repo tests mandate/scope drift over a multi-step task | Native |
 | [Consistency & reliability](docs/consistency_reliability.md) | `genai_capability_bench` (chatbot track, unchanged) + [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) (new agentic-track adapter) | Adapter + extend |
 | Boundary / permission | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
 | Adversarial inputs | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — adversarial NLP, jailbreak, prompt injection | Adapter |
@@ -109,7 +109,7 @@ Each scenario gets its own design doc under `docs/` — Scope, Approach, Methodo
 | Scenario | Risk if untested | What we test |
 |---|---|---|
 | [Intended performance](docs/intended_performance.md) | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely |
-| Objective alignment | Behavior drifts from mandate or pursues unintended sub-goals | Stays aligned to objective & scope over a task and over time |
+| [Objective alignment](docs/objective_alignment.md) | Behavior drifts from mandate or pursues unintended sub-goals | Stays aligned to objective & scope over a task and over time |
 | [Consistency & reliability](docs/consistency_reliability.md) | Same input yields different output; hallucination / variance | Repeatable, consistent outputs for equivalent inputs |
 
 ### Tier 2 — Boundaries & robustness
@@ -304,6 +304,7 @@ genai_alignment/
 | 0 | Scaffold — README, license, scenario registry, dev-plan docs | ✅ Done |
 | 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light, uniform HTML report template built | ✅ Done |
 | 1b | [Consistency & reliability](docs/consistency_reliability.md) — notebook 2, chatbot + agentic tracks, statistical methodology aligned to published literature (semantic entropy, Wilson CIs, BH correction) | ✅ Done |
+| 1c | [Objective alignment](docs/objective_alignment.md) — notebook 3, multi-hop QA + agentic tracks, native competing-objective-pressure dataset, shared 4-category drift-classification judge rubric | ✅ Done |
 | 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
 | 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |
