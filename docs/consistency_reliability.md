@@ -61,7 +61,7 @@ No new data was authored for this scenario — it reuses scenario 1's golden set
 
 ## Sample Results
 
-Full report with charts: [`docs/samples/consistency_reliability_report.html`](samples/consistency_reliability_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Azure OpenAI target `gpt-5-5-20260424-gs`, judged by a genuinely independent deployment (`JUDGE_MODEL=gpt-5-6-terra-latest-gs`), API version `2025-04-01-preview`:
+Full report with charts: [`docs/samples/consistency_reliability_report.html`](samples/consistency_reliability_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Azure OpenAI, target model per your own `TARGET_MODEL`, judged by a genuinely independent deployment per your own `JUDGE_MODEL` (see [.env.example](../.env.example) to configure both):
 
 | Track | Raw flip rate | Genuinely unstable | Consistently failing | Headline finding |
 |---|---|---|---|---|

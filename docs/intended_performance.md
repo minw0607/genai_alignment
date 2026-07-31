@@ -58,7 +58,7 @@ The public benchmark sample exists for breadth and external comparability — a 
 
 ## Sample Results
 
-Full report with charts: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Most recent run — Azure OpenAI target `gpt-5-5-20260424-gs`, judged by an independent deployment (`JUDGE_MODEL=gpt-5-6-terra-latest-gs`), API version `2025-04-01-preview`:
+Full report with charts: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Most recent run — Azure OpenAI, target model per your own `TARGET_MODEL`, judged by an independent deployment per your own `JUDGE_MODEL` (see [.env.example](../.env.example) to configure both):
 
 | Sub-dataset | n | avg score | pass rate |
 |---|---|---|---|
