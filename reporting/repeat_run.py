@@ -175,6 +175,35 @@ def add_semantic_consistency(
     return variance.merge(expanded, on=id_col)
 
 
+def add_pairwise_consistency(
+    variance: pd.DataFrame,
+    combined: pd.DataFrame,
+    id_col: str | list[str],
+    text_col: str,
+) -> pd.DataFrame:
+    """Zero-API-call alternative to add_semantic_consistency, using TF-IDF
+    similarity instead of bidirectional-entailment clustering — for dev
+    iteration or cost-constrained runs where spending LLM calls on every
+    task's consistency check isn't worth it. Same two output columns, so
+    downstream code doesn't need to know which method produced them, but
+    `n_meaning_clusters` here counts distinct normalized strings, not true
+    meaning-clusters (TF-IDF has no notion of "same meaning, different
+    words") — it will over-count clusters for paraphrased-but-equivalent
+    answers, which is exactly the failure mode semantic_consistency exists
+    to fix. Use this when speed/cost matters more than that distinction.
+    """
+    def _score_and_count(texts: list[str]) -> tuple[float, int]:
+        score = pairwise_self_consistency(list(texts))
+        distinct = len({t.strip().lower() for t in texts if isinstance(t, str) and t.strip()}) or 1
+        return score, distinct
+
+    grouped = combined.groupby(id_col)[text_col].apply(lambda s: _score_and_count(s))
+    expanded = pd.DataFrame(
+        grouped.tolist(), index=grouped.index, columns=["semantic_consistency", "n_meaning_clusters"]
+    ).reset_index()
+    return variance.merge(expanded, on=id_col)
+
+
 # ---------------------------------------------------------------- Wilson confidence intervals
 # Wilson, E. B. (1927), "Probable Inference, the Law of Succession, and
 # Statistical Inference" — well-calibrated at small n, unlike the normal

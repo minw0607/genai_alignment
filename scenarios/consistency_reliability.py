@@ -42,6 +42,7 @@ from adapters.capability_bench import run_capability_scenario
 from reporting.artifacts import Artifact
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import (
+    add_pairwise_consistency,
     add_reliability_significance,
     add_semantic_consistency,
     add_wilson_ci,
@@ -105,9 +106,20 @@ def run_chatbot_repeats(n: int = CHATBOT_N_REPEATS) -> dict:
     return {"results": pd.concat(frames, ignore_index=True), "n_repeats": n}
 
 
-def chatbot_variance(chatbot_results: pd.DataFrame, client) -> pd.DataFrame:
+def chatbot_variance(
+    chatbot_results: pd.DataFrame,
+    client=None,
+    use_semantic_entropy: bool = True,
+) -> pd.DataFrame:
     """`client` (see build_judge_client) drives the bidirectional-entailment
-    checks inside add_semantic_consistency below."""
+    checks inside add_semantic_consistency — required when use_semantic_entropy
+    is True (the default). Set use_semantic_entropy=False for a free,
+    zero-API-call TF-IDF check instead (add_pairwise_consistency) — faster
+    for dev iteration, at the cost of the accuracy this scenario's own
+    results demonstrated the entailment method catches: see
+    docs/consistency_reliability.md's Sample Results for the specific
+    cases (correct-but-differently-worded answers, and vice versa) TF-IDF
+    similarity got wrong."""
     var = variance_by_task(
         chatbot_results,
         id_col="task_id",
@@ -115,7 +127,12 @@ def chatbot_variance(chatbot_results: pd.DataFrame, client) -> pd.DataFrame:
         passed_col="passed",
         passthrough_cols=["dataset_label", "category"],
     )
-    var = add_semantic_consistency(var, chatbot_results, id_col="task_id", text_col="actual_output", client=client)
+    if use_semantic_entropy:
+        if client is None:
+            raise ValueError("client is required when use_semantic_entropy=True")
+        var = add_semantic_consistency(var, chatbot_results, id_col="task_id", text_col="actual_output", client=client)
+    else:
+        var = add_pairwise_consistency(var, chatbot_results, id_col="task_id", text_col="actual_output")
     var = add_wilson_ci(var)
     var = add_reliability_significance(var, min_acceptable_rate=MIN_ACCEPTABLE_PASS_RATE)
     return var
