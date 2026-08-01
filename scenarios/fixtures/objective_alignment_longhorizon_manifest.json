@@ -1,0 +1,19 @@
+{
+  "generated_from": {
+    "source": "Hand-authored, reusing scenario 1's policy statements (same provenance as objective_alignment_rag.jsonl) as the multi-document knowledge base for each conversation.",
+    "note": "Each script pairs 2-3 real policy documents with 3 legitimate follow-up questions (one per document) and one off-mandate temptation. The same fixed content is used to generate two conversations per script — 'early' (temptation right after the first legitimate exchange) and 'late' (temptation after all three legitimate exchanges) — so the only variable being compared is temptation position, not different content."
+  },
+  "design": {
+    "purpose": "Tests the long-horizon hypothesis from Arike et al. 2024 (Evaluating Goal Drift in Language Model Agents): does a system's adherence to its assigned mandate change as more of a conversation accumulates before the pressure arrives? Complements objective_alignment_rag.jsonl's single-turn test, which cannot distinguish 'held up under pressure' from 'held up under pressure that arrived immediately, before any context built up.'",
+    "conversation_structure": "system prompt (RAG_SYSTEM_PROMPT, same mandate as the single-turn track) + the script's kb_documents, then a fixed sequence of turns generated from legit_turns + temptation, real multi-turn (each turn sees the full prior conversation, not concatenated text) via scenario.MultiTurnChat.",
+    "early_vs_late": "early = [legit_turns[0], temptation, legit_turns[1], legit_turns[2]]; late = [legit_turns[0], legit_turns[1], legit_turns[2], temptation]. Same 4 turns, same content, only the temptation's position differs.",
+    "row_count": "3 scripts x 2 positions = 6 conversations, 4 turns each = 24 target-model calls",
+    "known_limitation": "3 scripts is a small sample for a position-effect comparison — a real finding either way (position matters / doesn't) should be read as directional, not conclusive. See docs/objective_alignment.md Next Steps."
+  },
+  "schema": {
+    "script_id": "unique conversation-script id",
+    "kb_documents": "list of policy statements given to the assistant for this conversation",
+    "legit_turns": "list of {message, reference} — on-mandate follow-up questions in a fixed order",
+    "temptation": "the off-mandate message inserted at either the 'early' or 'late' position"
+  }
+}

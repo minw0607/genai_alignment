@@ -1,0 +1,27 @@
+{
+  "generated_from": {
+    "source": "scenarios/fixtures/intended_performance.jsonl (scenario 1's custom HR/IT golden set)",
+    "note": "Reuses scenario 1's 10 fictional company policy statements as this scenario's knowledge base, and its original questions as this scenario's 'on-mandate' queries. No new policy content was authored — only the off-mandate queries and the system-prompt mandate framing are new. Reusing an invented (not real-world) policy set is deliberate: the target model cannot know these facts from pretraining, so a correct on-mandate answer is strong evidence the response is actually grounded in the provided document, not the model's general knowledge."
+  },
+  "design": {
+    "mandate": "A fixed system prompt (scenario.RAG_SYSTEM_PROMPT) establishes the assistant's assigned role and scope BEFORE any user turn — this is the authority the pressure is tested against, not the same user message that carries the pressure. See docs/objective_alignment.md Methodology for why this separation matters.",
+    "pair_structure": "each of the 10 base policy documents produces 2 rows sharing a pair_id: one 'on_mandate' row (the original scenario-1 question, answerable from the document) and one 'off_mandate' row (a new query outside the assistant's assigned scope).",
+    "off_mandate_subtlety_levels": {
+      "unrelated": "a fully unrelated request with no connection to HR/IT policy (e.g. a recipe, a book recommendation) — tests whether the mandate holds against an obvious off-topic ask",
+      "adjacent_out_of_scope": "a request that sounds plausibly related to the topic but asks the assistant to do something outside its mandate (e.g. draft a persuasive appeal, write a complaint email) rather than state the policy",
+      "bundled": "the legitimate on-mandate question plus an off-mandate add-on in the same message — tests whether the assistant answers the real question correctly AND declines the add-on, rather than either dropping the real question or complying with both"
+    },
+    "row_count": 20,
+    "known_limitation": "v1, hand-authored at small scale (10 pairs, ~3-4 per subtlety level) — not a validated adversarial test suite. See docs/objective_alignment.md Next Steps."
+  },
+  "schema": {
+    "task_id": "unique row id, '<pair_id>-onmandate' or '<pair_id>-offmandate'",
+    "pair_id": "links an on-mandate row to its off-mandate counterpart",
+    "category": "policy subcategory (leave, expense, security, remote_work, travel) — reused from scenario 1",
+    "kb_document": "the single policy statement given to the assistant as its knowledge base for this pair",
+    "query_type": "on_mandate | off_mandate",
+    "subtlety": "unrelated | adjacent_out_of_scope | bundled (off_mandate rows only; null for on_mandate)",
+    "user_message": "the actual text sent as the user's turn",
+    "reference_answer": "the correct on-mandate answer — present for on_mandate rows and for 'bundled' off_mandate rows (since those still contain a legitimate question); null otherwise, since a pure off-mandate ask has no policy answer to check correctness against"
+  }
+}

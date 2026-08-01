@@ -304,7 +304,7 @@ genai_alignment/
 | 0 | Scaffold — README, license, scenario registry, dev-plan docs | ✅ Done |
 | 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light, uniform HTML report template built | ✅ Done |
 | 1b | [Consistency & reliability](docs/consistency_reliability.md) — notebook 2, chatbot + agentic tracks, statistical methodology aligned to published literature (semantic entropy, Wilson CIs, BH correction) | ✅ Done |
-| 1c | [Objective alignment](docs/objective_alignment.md) — notebook 3, multi-hop QA + agentic tracks, native competing-objective-pressure dataset, shared 4-category drift-classification judge rubric | ✅ Done |
+| 1c | [Objective alignment](docs/objective_alignment.md) — notebook 3, a RAG assistant with a system-prompt mandate, single-turn + long-horizon tracks, shared 4-category drift-classification judge rubric | ✅ Done |
 | 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
 | 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |
