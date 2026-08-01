@@ -26,7 +26,7 @@ Most GenAI evaluation work answers one of two questions: *"how capable is this m
 
 That is an *alignment* question, not a capability or attack question. It sits closer to model-risk governance than to a leaderboard: the deliverable of this repo is not "which model scored highest," but **evidence-backed findings and audit-ready control requirements** for a specific deployed system, mapped to a defined scenario library.
 
-**This repo does not reimplement evaluation machinery that already exists.** It is a thin scenario-taxonomy, adapter, and reporting layer over a small ecosystem of sibling repos that already do the deep work — see [Where This Fits](#where-this-fits). New work here is concentrated where a real gap exists: objective-drift, boundary/permission, drift-detection, fail-safe, autonomy/oversight-gating, and third-party/vendor-agent testing (see [Scenario Library](#scenario-library)).
+**This repo does not reimplement evaluation machinery that already exists.** It is a thin scenario-taxonomy, adapter, and reporting layer over a small ecosystem of sibling repos that already do the deep work — see [Scenario Library](#scenario-library). New work here is concentrated where a real gap exists: objective-drift, boundary/permission, drift-detection, fail-safe, autonomy/oversight-gating, and third-party/vendor-agent testing.
 
 Three scenarios are fully built end-to-end (notebook → design doc → sample report) and serve as the reference for every scenario that follows: [Intended Performance](docs/intended_performance.md), [Consistency & Reliability](docs/consistency_reliability.md), and [Objective Alignment](docs/objective_alignment.md). Each design doc carries its own notebook link, methodology, metrics, and sample results — see [Scenario Library](#scenario-library) below for the full list and build status. Objective Alignment in particular is still an early-scale build — see its doc's [Limitations & Future Work](docs/objective_alignment.md#limitations--future-work) section for what it does and doesn't cover yet (small hand-authored test sets, a modest proxy for true long-horizon drift, no agentic-RAG or ongoing-monitoring layer).
 
@@ -36,7 +36,6 @@ Three scenarios are fully built end-to-end (notebook → design doc → sample r
 
 - [Overview](#overview)
 - [Setup](#setup)
-- [Where This Fits](#where-this-fits)
 - [Scenario Library](#scenario-library)
 - [Target Systems](#target-systems)
 - [Testing Strategy](#testing-strategy)
@@ -71,31 +70,6 @@ cd .. && git clone https://github.com/minw0607/multi_agent_otel_eval Agent
 
 `adapters/agent_otel.py` looks for it at `../Agent` relative to this repo. Its own runtime dependencies (LangChain, LangGraph, etc.) are a separate install: `pip install -e ".[agentic]"`.
 
-<a id="where-this-fits"></a>
-
-## 🧩 Where This Fits
-
-Testing whether an enterprise GenAI system is *aligned* draws on capability measurement, adversarial red-teaming, and agent/RAG evaluation all at once — three things already built, separately, in sibling repos by the same author. Rather than duplicate that work, each scenario in the library is either an **adapter** onto an existing repo, or **native** work built specifically to close a gap none of them cover:
-
-| Scenario | Existing coverage | Treatment |
-|---|---|---|
-| [Intended performance](docs/intended_performance.md) | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — answer accuracy, instruction following, reasoning | Adapter |
-| [Objective alignment](docs/objective_alignment.md) | *none* — no repo tests mandate/scope drift over a multi-step task | Native |
-| [Consistency & reliability](docs/consistency_reliability.md) | `genai_capability_bench` (chatbot track, unchanged) + [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) (new agentic-track adapter) | Adapter + extend |
-| Boundary / permission | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
-| Adversarial inputs | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — adversarial NLP, jailbreak, prompt injection | Adapter |
-| Drift detection | *none* — no before/after regression harness across model/tool versions | Native |
-| Fail-safe behavior | *none* — no error/edge-case chaos-injection harness | Native |
-| Multi-agent orchestration & handoff | [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) — OTel tracing, multi-agent, Mind2Web | Adapter |
-| Tool / MCP abuse & privilege escalation | `llm_red_teaming` — agentic tool attacks | Adapter + extend for MCP |
-| Autonomy & human-oversight gating | *none* — no one verifies approval gates actually fire | Native |
-| Sensitive-data handling (MNPI / PII) | `llm_red_teaming` — memorization/PII/RAG exfiltration data red-team | Adapter + extend for MNPI |
-| Third-party / vendor agents | *none* — no vendor-agent control-boundary auditing | Native |
-
-Adapters call into the sibling repos as installed packages or their published APIs — they never copy pipeline internals. [`rag_eval_framework`](https://github.com/minw0607/rag_eval_framework) is a further candidate adapter target for any scenario run against a RAG-backed assistant.
-
----
-
 <a id="scenario-library"></a>
 
 ## 📚 Scenario Library
@@ -104,32 +78,34 @@ Scenarios are organized into three tiers, ordered from foundational behavior to 
 
 Each scenario gets its own design doc under `docs/` — Scope, Approach, Methodology, Data, and Sample Results once a scenario has been run — linked from the tables below as it's written. See [`docs/intended_performance.md`](docs/intended_performance.md) for the format a run scenario follows; [`docs/drift_detection.md`](docs/drift_detection.md) predates a build and follows the source design diagram's own shape (Risk/Goal/Audit Question) instead — it'll converge to the same template once that scenario is actually built.
 
+Testing whether an enterprise GenAI system is *aligned* draws on capability measurement, adversarial red-teaming, and agent/RAG evaluation all at once — three things already built, separately, in sibling repos by the same author. Rather than duplicate that work, each scenario below is either an **adapter** onto an existing repo, or **native** work built specifically to close a gap none of them cover — the last two columns say which. Adapters call into the sibling repos as installed packages or their published APIs; they never copy pipeline internals. [`rag_eval_framework`](https://github.com/minw0607/rag_eval_framework) is a further candidate adapter target for any scenario run against a RAG-backed assistant.
+
 ### Tier 1 — Foundational behavior
 
-| Scenario | Risk if untested | What we test |
-|---|---|---|
-| [Intended performance](docs/intended_performance.md) | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely |
-| [Objective alignment](docs/objective_alignment.md) | Behavior drifts from mandate or pursues unintended sub-goals | Stays aligned to objective & scope over a task and over time |
-| [Consistency & reliability](docs/consistency_reliability.md) | Same input yields different output; hallucination / variance | Repeatable, consistent outputs for equivalent inputs |
+| Scenario | Risk if untested | What we test | Existing coverage | Treatment |
+|---|---|---|---|---|
+| [Intended performance](docs/intended_performance.md) | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — answer accuracy, instruction following, reasoning | Adapter |
+| [Objective alignment](docs/objective_alignment.md) | Behavior drifts from mandate or pursues unintended sub-goals | Stays aligned to objective & scope over a task and over time | *none* — no repo tests mandate/scope drift over a multi-step task | Native |
+| [Consistency & reliability](docs/consistency_reliability.md) | Same input yields different output; hallucination / variance | Repeatable, consistent outputs for equivalent inputs | `genai_capability_bench` (chatbot track, unchanged) + [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) (new agentic-track adapter) | Adapter + extend |
 
 ### Tier 2 — Boundaries & robustness
 
-| Scenario | Risk if untested | What we test |
-|---|---|---|
-| Boundary / permission | Exceeds permissions, access, or scope of action | Does not act beyond granted authority or data access |
-| Adversarial inputs | Manipulated or unsafe behavior from conflicting / malicious input | Robustness to ambiguous, conflicting, adversarial inputs |
-| [Drift detection](docs/drift_detection.md) | Outputs change over time with no input change (model / tool updates) | Behavior stable absent input change; material change is gated |
-| Fail-safe behavior | Errors, edge cases, or incomplete data cause uncontrolled outcomes | Safe handling of errors, edge cases, and degraded data |
+| Scenario | Risk if untested | What we test | Existing coverage | Treatment |
+|---|---|---|---|---|
+| Boundary / permission | Exceeds permissions, access, or scope of action | Does not act beyond granted authority or data access | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
+| Adversarial inputs | Manipulated or unsafe behavior from conflicting / malicious input | Robustness to ambiguous, conflicting, adversarial inputs | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — adversarial NLP, jailbreak, prompt injection | Adapter |
+| [Drift detection](docs/drift_detection.md) | Outputs change over time with no input change (model / tool updates) | Behavior stable absent input change; material change is gated | *none* — no before/after regression harness across model/tool versions | Native |
+| Fail-safe behavior | Errors, edge cases, or incomplete data cause uncontrolled outcomes | Safe handling of errors, edge cases, and degraded data | *none* — no error/edge-case chaos-injection harness | Native |
 
 ### Tier 3 — Agentic & enterprise *(Protiviti-recommended)*
 
-| Scenario | Risk if untested | What we test |
-|---|---|---|
-| Multi-agent orchestration & handoff | Privilege / context leak across handoffs; emergent behavior no single agent owns | Integrity of delegation, context-passing, least-privilege across agents |
-| Tool / MCP abuse & privilege escalation | Permitted tools chained to unauthorized outcomes; MCP calls escalate or exfiltrate | Composed tool / MCP actions stay within policy |
-| Autonomy & human-oversight gating | Agent acts where human approval is required; oversight gates do not trigger | Oversight gates fire at the right autonomy level & risk threshold |
-| Sensitive-data handling (MNPI / PII) | Accesses, retains, or discloses MNPI / PII / client data beyond policy | Data minimization, segregation, and disclosure controls in agent actions |
-| Third-party / vendor agents | Vendor agents behave outside controls; integration / auth weaknesses | Vendor agent behavior + integration controls (APIs, auth, data flow) |
+| Scenario | Risk if untested | What we test | Existing coverage | Treatment |
+|---|---|---|---|---|
+| Multi-agent orchestration & handoff | Privilege / context leak across handoffs; emergent behavior no single agent owns | Integrity of delegation, context-passing, least-privilege across agents | [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) — OTel tracing, multi-agent, Mind2Web | Adapter |
+| Tool / MCP abuse & privilege escalation | Permitted tools chained to unauthorized outcomes; MCP calls escalate or exfiltrate | Composed tool / MCP actions stay within policy | `llm_red_teaming` — agentic tool attacks | Adapter + extend for MCP |
+| Autonomy & human-oversight gating | Agent acts where human approval is required; oversight gates do not trigger | Oversight gates fire at the right autonomy level & risk threshold | *none* — no one verifies approval gates actually fire | Native |
+| Sensitive-data handling (MNPI / PII) | Accesses, retains, or discloses MNPI / PII / client data beyond policy | Data minimization, segregation, and disclosure controls in agent actions | `llm_red_teaming` — memorization/PII/RAG exfiltration data red-team | Adapter + extend for MNPI |
+| Third-party / vendor agents | Vendor agents behave outside controls; integration / auth weaknesses | Vendor agent behavior + integration controls (APIs, auth, data flow) | *none* — no vendor-agent control-boundary auditing | Native |
 
 ---
 
