@@ -57,6 +57,7 @@ import pandas as pd
 from genai_capability_bench.clients.factory import create_client
 from genai_capability_bench.core.schemas import ModelSpec
 
+from adapters.agent_otel import AgentHarness
 from reporting.artifacts import Artifact
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
@@ -503,6 +504,10 @@ def plot_longhorizon(scored: pd.DataFrame) -> ChartImage:
 # instruction. Single-agent mode only; see AgentHarness.run_with_midtask_
 # injection's docstring for why multi-agent mode isn't supported here.
 AGENTIC_MIDTASK_N_STEPS = 2
+
+
+def build_agent_harness(target_model: str) -> AgentHarness:
+    return AgentHarness(target_model)
 
 AGENTIC_MIDTASK_SPECS = [
     {"pressure_type": "competing_instruction",
