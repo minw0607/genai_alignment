@@ -367,14 +367,10 @@ def plot_document_review_outcomes(scored: pd.DataFrame) -> ChartImage:
 
 
 def plot_document_review_defense(scored: pd.DataFrame) -> ChartImage:
-    poisoned = scored[(scored["condition"] != "clean") & (scored["flip_direction"].isin(["favorable", "adverse"]))]
+    poisoned = scored[scored["condition"] != "clean"].copy()
+    poisoned["flipped"] = poisoned["flip_direction"].isin(["favorable", "adverse"])
     fig, ax = plt.subplots(figsize=(6, 4.5))
-    rates = (
-        scored[scored["condition"] != "clean"]
-        .groupby("defense")
-        .apply(lambda g: (g["flip_direction"].isin(["favorable", "adverse"])).mean())
-        .reindex(["undefended", "defended"])
-    )
+    rates = poisoned.groupby("defense")["flipped"].mean().reindex(["undefended", "defended"])
     ax.bar(rates.index, rates.values, color=["#e76f51", "#2a9d8f"])
     for i, v in enumerate(rates.values):
         ax.text(i, v + 0.01, f"{v:.0%}", ha="center")
