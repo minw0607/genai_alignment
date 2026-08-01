@@ -28,7 +28,7 @@ That is an *alignment* question, not a capability or attack question. It sits cl
 
 **This repo does not reimplement evaluation machinery that already exists.** It is a thin scenario-taxonomy, adapter, and reporting layer over a small ecosystem of sibling repos that already do the deep work — see [Scenario Library](#scenario-library). New work here is concentrated where a real gap exists: objective-drift, boundary/permission, drift-detection, fail-safe, autonomy/oversight-gating, and third-party/vendor-agent testing.
 
-Three scenarios are fully built end-to-end (notebook → design doc → sample report) and serve as the reference for every scenario that follows: [Intended Performance](docs/intended_performance.md), [Consistency & Reliability](docs/consistency_reliability.md), and [Objective Alignment](docs/objective_alignment.md). Each design doc carries its own notebook link, methodology, metrics, and sample results — see [Scenario Library](#scenario-library) below for the full list and build status. Objective Alignment in particular is still an early-scale build — see its doc's [Limitations & Future Work](docs/objective_alignment.md#limitations--future-work) section for what it does and doesn't cover yet (small hand-authored test sets, a modest proxy for true long-horizon drift, no agentic-RAG or ongoing-monitoring layer).
+Four scenarios are built end-to-end (notebook → design doc → sample report) and serve as the reference for every scenario that follows: [Intended Performance](docs/intended_performance.md), [Consistency & Reliability](docs/consistency_reliability.md), [Objective Alignment](docs/objective_alignment.md), and [Adversarial Inputs](docs/adversarial_inputs.md). Each design doc carries its own notebook link, methodology, metrics, and sample results — see [Scenario Library](#scenario-library) below for the full list and build status. Two are partial builds, not finished scope, and say so in their own docs: Objective Alignment's [Limitations & Future Work](docs/objective_alignment.md#limitations--future-work) section (small hand-authored test sets, a modest proxy for true long-horizon drift, no agentic-RAG or ongoing-monitoring layer) and Adversarial Inputs' Methodology section (only the prompt-injection workstream is adapted so far; jailbreaking and adversarial NLP are still open).
 
 <a id="contents"></a>
 
@@ -70,6 +70,14 @@ cd .. && git clone https://github.com/minw0607/multi_agent_otel_eval Agent
 
 `adapters/agent_otel.py` looks for it at `../Agent` relative to this repo. Its own runtime dependencies (LangChain, LangGraph, etc.) are a separate install: `pip install -e ".[agentic]"`.
 
+[Adversarial inputs](docs/adversarial_inputs.md) depends on [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming), also not pip-installable — clone it as a sibling of this repo's parent directory, matching its own name so `adapters/red_teaming.py` finds it at `../llm_red_teaming`:
+
+```bash
+cd .. && git clone https://github.com/minw0607/llm_red_teaming llm_red_teaming
+```
+
+No extra Python packages needed for the prompt-injection slice adapted so far — it only needs `openai`/`pandas`/`python-dotenv`, already present via `genai_capability_bench`. `llm_red_teaming`'s other workstreams (not yet adapted) need heavier packages (`torch`, `transformers`, `textattack`) — irrelevant until those are built.
+
 <a id="scenario-library"></a>
 
 ## 📚 Scenario Library
@@ -93,7 +101,7 @@ Testing whether an enterprise GenAI system is *aligned* draws on capability meas
 | Scenario | Risk if untested | What we test | Existing coverage | Treatment |
 |---|---|---|---|---|
 | Boundary / permission | Exceeds permissions, access, or scope of action | Does not act beyond granted authority or data access | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
-| Adversarial inputs | Manipulated or unsafe behavior from conflicting / malicious input | Robustness to ambiguous, conflicting, adversarial inputs | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — adversarial NLP, jailbreak, prompt injection | Adapter |
+| [Adversarial inputs](docs/adversarial_inputs.md) | Manipulated or unsafe behavior from conflicting / malicious input | Robustness to ambiguous, conflicting, adversarial inputs | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — adversarial NLP, jailbreak, prompt injection | Adapter |
 | [Drift detection](docs/drift_detection.md) | Outputs change over time with no input change (model / tool updates) | Behavior stable absent input change; material change is gated | *none* — no before/after regression harness across model/tool versions | Native |
 | Fail-safe behavior | Errors, edge cases, or incomplete data cause uncontrolled outcomes | Safe handling of errors, edge cases, and degraded data | *none* — no error/edge-case chaos-injection harness | Native |
 
@@ -281,7 +289,7 @@ genai_alignment/
 | 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light, uniform HTML report template built | ✅ Done |
 | 1b | [Consistency & reliability](docs/consistency_reliability.md) — notebook 2, chatbot + agentic tracks, statistical methodology aligned to published literature (semantic entropy, Wilson CIs, BH correction) | ✅ Done |
 | 1c | [Objective alignment](docs/objective_alignment.md) — notebook 3, a RAG assistant with a system-prompt mandate (single-turn + long-horizon tracks) plus a real agent mid-task pressure-injection track, shared 4-category drift-classification judge rubric | ✅ Done |
-| 2 | Tier 2 reuse — adversarial-inputs adapter | 📋 Planned |
+| 2 | Tier 2 reuse — [adversarial-inputs adapter](docs/adversarial_inputs.md): prompt-injection slice built (notebook 4, canary benchmark + real-payload track onto `llm_red_teaming`); jailbreaking + adversarial NLP slices still open | 🔶 In progress |
 | 3 | Tier 2 native — boundary/permission, fail-safe, [drift-detection](docs/drift_detection.md) | 📋 Planned |
 | 4 | Tier 3 reuse — multi-agent orchestration, MCP-abuse, sensitive-data adapters | 📋 Planned |
 | 5 | Tier 3 native — autonomy/oversight-gating, third-party/vendor-agent audit | 📋 Planned |
