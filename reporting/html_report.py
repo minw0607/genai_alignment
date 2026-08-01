@@ -89,14 +89,25 @@ class ScenarioReport:
     key_metrics: list[Metric]
     results_tables: list[tuple[str, pd.DataFrame]]
     charts: list[ChartImage] = field(default_factory=list)
-    observations: list[str] = field(default_factory=list)
+    executive_summary: str = ""
+    observations: list[str] = field(default_factory=list)  # rendered as "Key Findings"
+    high_risk_cases: list[str] = field(default_factory=list)  # rendered as "High-Risk Cases"; section hidden if empty
     next_steps: list[str] = field(default_factory=list)
+    artifacts_table: pd.DataFrame | None = None  # rendered in the Appendix, alongside results_tables
     extra_sections: list[ExtraSection] = field(default_factory=list)
     notebook_link: str = ""
     doc_link: str = ""
     generated_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     )
+
+
+def _default_executive_summary(report: ScenarioReport) -> str:
+    """Fallback used when a scenario doesn't supply its own executive_summary —
+    keeps older scenario reports rendering (if plainly) rather than blank."""
+    metrics = "; ".join(f"{m.label}: {m.value}" for m in report.key_metrics[:3])
+    lead = f"{report.scenario_name} tested: {report.goal[0].lower()}{report.goal[1:]}"
+    return f"{lead} Headline metrics — {metrics}." if metrics else lead
 
 
 def render_report(report: ScenarioReport) -> str:
@@ -110,6 +121,11 @@ def render_report(report: ScenarioReport) -> str:
         (title, df.to_html(index=False, classes="report-table", border=0, escape=True))
         for title, df in report.results_tables
     ]
+    artifacts_table_html = (
+        report.artifacts_table.to_html(index=False, classes="report-table", border=0, escape=True)
+        if report.artifacts_table is not None
+        else None
+    )
     data_charts = [c for c in report.charts if c.section == "data"]
     results_charts = [c for c in report.charts if c.section == "results"]
     other_charts = [c for c in report.charts if c.section == "other"]
@@ -118,10 +134,13 @@ def render_report(report: ScenarioReport) -> str:
         report=report,
         tier_color=TIER_COLORS.get(report.tier, "#495057"),
         results_tables_html=results_tables_html,
+        artifacts_table_html=artifacts_table_html,
         data_charts=data_charts,
         results_charts=results_charts,
         other_charts=other_charts,
+        executive_summary_html=_inline_md(report.executive_summary or _default_executive_summary(report)),
         observations_html=[_inline_md(o) for o in report.observations],
+        high_risk_cases_html=[_inline_md(c) for c in report.high_risk_cases],
         next_steps_html=[_inline_md(o) for o in report.next_steps],
         approach_html=_inline_md(report.approach),
     )

@@ -79,7 +79,21 @@
   .chart-card .caption { font-size: 12px; color: var(--muted); margin-top: 8px; }
   ul.report-list { padding-left: 20px; margin: 0; }
   ul.report-list li { margin-bottom: 10px; }
+  ul.report-list.highlight { padding-left: 0; list-style: none; }
+  ul.report-list.highlight li {
+    border-left: 3px solid var(--fail);
+    background: #fff5f2;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+  }
+  p.exec-summary { font-size: 15px; }
+  p.muted { color: var(--muted); font-size: 13px; }
+  .toc { font-size: 12px; color: var(--muted); margin-top: 12px; }
+  .toc a { color: var(--muted); margin-right: 12px; }
   code { background: var(--bg-soft); padding: 1px 5px; border-radius: 4px; font-size: 90%; }
+  details.appendix-block { margin-bottom: 22px; }
+  details.appendix-block summary { cursor: pointer; font-size: 15px; color: var(--muted); margin: 18px 0 8px; }
   footer { color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 48px; }
   @media print {
     header.report-header { background: none; }
@@ -101,40 +115,46 @@
       {% if report.notebook_link %} · <a href="{{ report.notebook_link }}">notebook</a>{% endif %}
       {% if report.doc_link %} · <a href="{{ report.doc_link }}">scenario design doc</a>{% endif %}
     </div>
+    <div class="toc">
+      <a href="#executive-summary">Executive Summary</a>
+      <a href="#key-findings">Key Findings</a>
+      <a href="#testing-scope">Testing Scope</a>
+      <a href="#testing-approach">Testing Approach</a>
+      <a href="#results-summary">Results Summary</a>
+      {% if high_risk_cases_html %}<a href="#high-risk-cases">High-Risk Cases</a>{% endif %}
+      <a href="#next-steps">Next Steps</a>
+      <a href="#appendix">Appendix</a>
+    </div>
   </div>
 </header>
 
 <div class="page">
 
-  <section>
-    <h2>Key Metrics</h2>
-    <div class="metrics-row">
-      {% for m in report.key_metrics %}
-      <div class="metric-card">
-        <div class="value">{{ m.value }}</div>
-        <div class="label">{{ m.label }}</div>
-        {% if m.sublabel %}<div class="sublabel">{{ m.sublabel }}</div>{% endif %}
-      </div>
-      {% endfor %}
-    </div>
+  <section id="executive-summary">
+    <h2>Executive Summary</h2>
+    <p class="exec-summary">{{ executive_summary_html }}</p>
   </section>
 
-  <section>
-    <h2>Target</h2>
+  <section id="key-findings">
+    <h2>Key Findings</h2>
+    {% if observations_html %}
+    <ul class="report-list">
+      {% for o in observations_html %}<li>{{ o }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No findings flagged in this run.</p>
+    {% endif %}
+  </section>
+
+  <section id="testing-scope">
+    <h2>Testing Scope</h2>
+    <h3>Target</h3>
     <table class="kv">
       {% for k, v in report.target_summary.items() %}
       <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
       {% endfor %}
     </table>
-  </section>
-
-  <section>
-    <h2>Testing Approach</h2>
-    <p>{{ approach_html }}</p>
-  </section>
-
-  <section>
-    <h2>Data</h2>
+    <h3>Testing Data</h3>
     <div class="data-cards">
       {% for d in report.data_sections %}
       <div class="data-card">
@@ -158,8 +178,22 @@
     {% endif %}
   </section>
 
-  <section>
-    <h2>Results</h2>
+  <section id="testing-approach">
+    <h2>Testing Approach</h2>
+    <p>{{ approach_html }}</p>
+  </section>
+
+  <section id="results-summary">
+    <h2>Results Summary</h2>
+    <div class="metrics-row">
+      {% for m in report.key_metrics %}
+      <div class="metric-card">
+        <div class="value">{{ m.value }}</div>
+        <div class="label">{{ m.label }}</div>
+        {% if m.sublabel %}<div class="sublabel">{{ m.sublabel }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
     {% if results_charts %}
     <div class="chart-grid">
       {% for c in results_charts %}
@@ -170,15 +204,8 @@
       {% endfor %}
     </div>
     {% endif %}
-    {% for title, table_html in results_tables_html %}
-      <h3>{{ title }}</h3>
-      {{ table_html | safe }}
-    {% endfor %}
-  </section>
-
-  {% if other_charts %}
-  <section>
-    <h2>Additional Charts</h2>
+    {% if other_charts %}
+    <h3>Additional Charts</h3>
     <div class="chart-grid">
       {% for c in other_charts %}
       <div class="chart-card">
@@ -187,17 +214,20 @@
       </div>
       {% endfor %}
     </div>
+    {% endif %}
+  </section>
+
+  {% if high_risk_cases_html %}
+  <section id="high-risk-cases">
+    <h2>High-Risk Cases</h2>
+    <p class="muted">Individual results from this run worth a reviewer's direct attention — not the full data (see Appendix), just the cases where the outcome itself is the finding.</p>
+    <ul class="report-list highlight">
+      {% for c in high_risk_cases_html %}<li>{{ c }}</li>{% endfor %}
+    </ul>
   </section>
   {% endif %}
 
-  <section>
-    <h2>Observations</h2>
-    <ul class="report-list">
-      {% for o in observations_html %}<li>{{ o }}</li>{% endfor %}
-    </ul>
-  </section>
-
-  <section>
+  <section id="next-steps">
     <h2>Next Steps</h2>
     <ul class="report-list">
       {% for n in next_steps_html %}<li>{{ n }}</li>{% endfor %}
@@ -210,6 +240,23 @@
     {{ extra.html | safe }}
   </section>
   {% endfor %}
+
+  <section id="appendix">
+    <h2>Appendix</h2>
+    <p class="muted">The full underlying data behind Results Summary above — every row, not just the highlights — plus a live-checked record of every file this run read or produced.</p>
+    {% for title, table_html in results_tables_html %}
+    <details class="appendix-block" open>
+      <summary>{{ title }}</summary>
+      {{ table_html | safe }}
+    </details>
+    {% endfor %}
+    {% if artifacts_table_html %}
+    <details class="appendix-block" open>
+      <summary>Artifacts &amp; documentation trail</summary>
+      {{ artifacts_table_html | safe }}
+    </details>
+    {% endif %}
+  </section>
 
   <footer>
     Generated by <a href="https://github.com/minw0607/genai_alignment">genai_alignment</a> — scenario-based alignment testing for enterprise GenAI systems. This is a uniform report template shared across every scenario in the library.

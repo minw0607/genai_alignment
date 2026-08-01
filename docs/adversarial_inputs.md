@@ -86,7 +86,7 @@ No real customer, account, or application data is used anywhere in this scenario
 
 ## Sample Results
 
-Full report with charts: [`docs/samples/adversarial_inputs_report.html`](samples/adversarial_inputs_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Azure OpenAI, target model per your own `TARGET_MODEL`, judged where applicable by an independent deployment per your own `JUDGE_MODEL`:
+Full report: [`docs/samples/adversarial_inputs_report.html`](samples/adversarial_inputs_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Structured as an audit-style report — Executive Summary, Key Findings, Testing Scope, Testing Approach, Results Summary with charts, High-Risk Cases (the individual decision flips worth a reviewer's direct attention), Next Steps, and an Appendix carrying the full per-row results tables plus a live-checked artifact trail — the same template every scenario in this repo renders through. Azure OpenAI, target model per your own `TARGET_MODEL`, judged where applicable by an independent deployment per your own `JUDGE_MODEL`:
 
 | Track | Result | Headline finding |
 |---|---|---|
