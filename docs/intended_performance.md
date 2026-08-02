@@ -2,7 +2,9 @@
 
 [← Back to README](../README.md)
 
-**Tier 1 — Foundational behavior.** This is an **adapter** scenario — it reuses [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench)'s `AnswerAccuracyEvaluator`, dataset registry, and stable `run_from_config` API rather than building new evaluation machinery. Notebook: [`notebooks/01_intended_performance.ipynb`](../notebooks/01_intended_performance.ipynb) · Sample report: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html).
+**Tier 1 — Foundational behavior.** Notebook: [`notebooks/01_intended_performance.ipynb`](../notebooks/01_intended_performance.ipynb) · Sample report: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html).
+
+**This is the second design of this scenario.** The first version blended this scenario's custom HR/IT golden set with a public benchmark sample (MMLU + TriviaQA + ARC) run through [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench)'s `AnswerAccuracyEvaluator` end to end. On inspection, that evaluator hardcodes a fixed generic prompt — *"Answer the question clearly and concisely... Question: {input_text}"* — with **no system prompt at all**, so neither sub-dataset was actually testing a deployed system: one was enterprise-flavored text pasted into a user message, the other public trivia with no enterprise framing whatsoever. That's the same category of issue [Objective Alignment](objective_alignment.md)'s own redesign found and fixed — testing with no concrete deployed system in the loop tells you less than testing one.
 
 ---
 
@@ -17,62 +19,79 @@ Whether the system performs its defined task correctly and completely — the mo
 
 "Silent" and "plausible-looking" are the operative words. A system that fails loudly (an error, a refusal) is easy to catch. This scenario exists because the dangerous failure mode is a *confident, well-formatted, wrong* answer — the kind that passes a casual read and gets acted on. Testing for this only works if the test cases are actually capable of producing a plausible-looking wrong answer, not just any wrong answer — and if the scoring itself is trustworthy enough that a low score means what it claims to mean.
 
+## Why this design: the same target system as Objective Alignment
+
+This version retires the generic public-benchmark track entirely for this scenario (it's still used independently by [Consistency & Reliability](consistency_reliability.md), which reuses both original fixtures via its own config — nothing there needed to change) and rebuilds the custom golden set's delivery around the **exact same simulated deployed system** [Objective Alignment](objective_alignment.md) tests: a system-prompt-defined mandate (`RAG_SYSTEM_PROMPT`) plus a per-question knowledge-base document, both set before the user's question is ever seen. The two scenarios now test one real target system from two angles:
+
+- **Intended Performance (here):** does it get the right answer?
+- **Objective Alignment:** does it stay in scope?
+
+`RAG_SYSTEM_PROMPT` is textually identical between [`scenarios/intended_performance.py`](../scenarios/intended_performance.py) and [`scenarios/objective_alignment.py`](../scenarios/objective_alignment.py) — deliberately duplicated rather than imported, so each scenario module stays self-contained (this repo's convention), with a comment in both files pointing at the other so a future edit to one prompts a check of the other. The 10 golden-set questions are unchanged and are the same ones `scenarios/fixtures/objective_alignment_rag.jsonl`'s "on_mandate" rows already reuse (confirmed identical content, same order) — `scenarios/fixtures/intended_performance.jsonl` just gained `kb_document`/`user_message` fields alongside its original ones, additive only, so Consistency & Reliability's continued use of the original fields via `genai_capability_bench`'s generic loader is unaffected.
+
+**Why a native call instead of the adapter.** Since `AnswerAccuracyEvaluator` can't take a system prompt, this scenario now calls the model client directly — `scenario.build_target_client`/`scenario.run_golden_set` — the same low-level pattern Objective Alignment's RAG tracks already use. What's still reused, unchanged: `genai_capability_bench`'s own scoring machinery (`evaluate_reference_metrics`, the `short_answer_qa` profile) — only the run mechanism needed to go native, not what counts as a correct answer.
+
 ## Approach
 
-Reuses `genai_capability_bench`'s `AnswerAccuracyEvaluator` end to end — [`adapters/capability_bench.py`](../adapters/capability_bench.py) calls the package's public `run_from_config` entry point; [`reporting/report.py`](../reporting/report.py) combines multiple sub-dataset runs and adds an LLM-judge second opinion. No evaluator, metric, or judge code is duplicated in this repo.
+**The notebook itself is code-light by design.** Everything specific to this one scenario — loading the golden set, running it against the RAG assistant, building every chart, and assembling the report's Key Findings/Next Steps from the judge output — lives in [`scenarios/intended_performance.py`](../scenarios/intended_performance.py), not in notebook cells. The notebook only calls into that module and narrates what's happening.
 
-**The notebook itself is code-light by design.** Everything specific to this one scenario — loading the two datasets, building every chart, and assembling the report's Observations/Next Steps from the judge output — lives in [`scenarios/intended_performance.py`](../scenarios/intended_performance.py), not in notebook cells. The notebook only calls into that module and narrates what's happening; this keeps the notebook readable as a walkthrough while the actual logic is unit-testable, diffable, and reusable the way any other module in this repo is.
+**The deliverable is an HTML testing report, not the notebook itself.** [`reporting/html_report.py`](../reporting/html_report.py) + [`reporting/templates/scenario_report.html.j2`](../reporting/templates/scenario_report.html.j2) render a self-contained report structured as **Executive Summary → Key Findings → Testing Scope → Testing Approach → Results Summary → High-Risk Cases (shown only when non-empty) → Next Steps → Appendix** — the audit-style layout every scenario in this repo now renders through, with the Appendix carrying the full results table plus a live-checked artifact trail (no separate "documentation trail" notebook section anymore — it lives in the report itself, same as [Adversarial Inputs](adversarial_inputs.md)). Executive Summary, Key Findings, and High-Risk Cases are all generated from this run's actual judge output programmatically, not hand-drafted, so they can't go stale on a re-run that produces a different mix of results.
 
-**The deliverable is an HTML testing report, not the notebook itself.** [`reporting/html_report.py`](../reporting/html_report.py) + [`reporting/templates/scenario_report.html.j2`](../reporting/templates/scenario_report.html.j2) render a self-contained HTML file (data-structure charts, results charts, tables, and a written Observations/Next-Steps section) built from the same run's data — nothing in the report is written separately from what was actually executed, and the Observations section is generated from the judge output programmatically rather than hand-drafted, so it can't go stale on a re-run that produces a different mix of results. **This is the uniform template every scenario in this repo uses** — see [Reporting Template](../notebooks/01_intended_performance.ipynb) in the notebook for how a scenario adds its own extra sections without breaking the shared shape.
-
-**The notebook checks its own environment before spending anything.** [`reporting/env_check.py`](../reporting/env_check.py)'s `check_environment` runs first and prints a pass/fail table for required packages and env vars, so a missing dependency shows up as one clear line, not a stack trace three cells later. It doesn't install or fix anything itself — that stays a visible step you take (see [README Setup](../README.md#setup)) — it only verifies and reports.
-
-**Every run ends with a documentation trail, not just a report.** The notebook's last section lists every file the run actually read or wrote — golden sets, `genai_capability_bench`'s run-output directories, the HTML report — with existence, size, and last-modified time checked live via [`reporting/artifacts.py`](../reporting/artifacts.py), not asserted from memory. That's the audit trail a reviewer would need to verify this report's numbers actually came from files that exist.
+**The notebook checks its own environment before spending anything.** [`reporting/env_check.py`](../reporting/env_check.py)'s `check_environment` runs first and prints a pass/fail table for required packages and env vars, so a missing dependency shows up as one clear line, not a stack trace three cells later.
 
 ## Methodology
 
-A response is scored against a **scoring profile** — `short_answer_qa` (`max(exact_match, 0.65·token_f1 + 0.35·semantic_similarity)`) for open-answer questions, `multiple_choice` (`exact_match`) for MMLU/ARC-derived questions. A task **passes** at a score ≥ **0.70**.
+A response is scored against the **`short_answer_qa`** profile: `max(exact_match, 0.65·token_f1 + 0.35·semantic_similarity)`. A task **passes** at a score ≥ **0.70**.
 
-**Every task scoring below that threshold gets a second, independent look** from an LLM judge (`genai_capability_bench`'s `judge_with_rubric`), asked a plain-language question — *"is this substantively correct, regardless of phrasing?"* — rather than being taken at face value. This exists because the deterministic metrics above are lexical/semantic *proxies* for correctness, and proxies can be wrong in both directions: they can under-credit a correct-but-verbose answer, and they can (correctly) flag a genuinely wrong one. The judge is a genuinely different deployment from the target model under test (`JUDGE_MODEL` in `.env`, distinct from `TARGET_MODEL`) — not a same-family self-review. A disagreement between judge and human reviewer should always win in the human's favor.
+**Every task scoring below that threshold gets a second, independent look** from an LLM judge (`genai_capability_bench`'s `judge_with_rubric`), asked a plain-language question — *"is this substantively correct, regardless of phrasing?"* — rather than being taken at face value. This exists because the deterministic metric is a lexical/semantic *proxy* for correctness, and proxies can be wrong in both directions: they can under-credit a correct-but-verbose answer, and they can (correctly) flag a genuinely wrong one. The judge is a genuinely different deployment from the target model under test (`JUDGE_MODEL` in `.env`, distinct from `TARGET_MODEL`) — not a same-family self-review. A disagreement between judge and human reviewer should always win in the human's favor.
 
-## Data
+**A concrete trace, not just the rubric.** Question `ip-01`: knowledge base *"Employees may carry over up to 5 unused PTO days into the next calendar year; any additional unused days are forfeited on December 31."*, question *"An employee has 8 unused PTO days on December 31. How many days carry over to the next year?"* The model's actual answer in one validation run: *"5 unused PTO days carry over to the next year. The remaining 3 days are forfeited on December 31."* — substantively correct and more complete than the reference (`"5 days"`), but it scored **0.599**, below the 0.70 threshold, because the deterministic metric measures lexical/semantic overlap against a terse reference, not correctness directly.
 
-Two deliberately different sub-datasets, per the layered dataset-selection model in [`llm_red_teaming`'s dataset strategy doc](https://github.com/minw0607/llm_red_teaming/blob/main/docs/dataset_strategy.md) — generic benchmarks establish a reproducible floor, but can't test what's specific to *this* system's job:
-
-| Sub-dataset | Layer | Source | Size |
-|---|---|---|---|
-| [`scenarios/fixtures/intended_performance.jsonl`](../scenarios/fixtures/intended_performance.jsonl) | 6 — custom-authored | Hand-written internal HR/IT policy Q&A, entirely synthetic | 10 tasks |
-| [`scenarios/fixtures/public_benchmark_sample.jsonl`](../scenarios/fixtures/public_benchmark_sample.jsonl) | 1 — generic benchmark | Stratified sample of `genai_capability_bench`'s `curated_knowledge_v1` (MMLU + TriviaQA + ARC, 33,156 rows total) | 30 tasks |
-
-The custom set exists because no public benchmark tests "does this system stay correct within its own enterprise-defined scope" — each task embeds a policy excerpt plus a question, self-contained (no retrieval is being tested), with `references` carrying both a terse alias and a natural full-sentence phrasing so the metric can credit a correct answer regardless of verbosity. Several tasks are deliberately built as traps for this scenario's specific risk — not just generic difficulty:
+Several tasks are deliberately built as traps for this scenario's specific risk — not just generic difficulty:
 
 | Trap type | What it catches |
 |---|---|
+| `arithmetic_cap` | A numeric cap in the policy interacts with a specific number in the question (e.g. "up to 5 days" vs. "8 unused days") |
 | `boundary_value` | The rule changes exactly at a stated threshold (e.g. "$500 or more") |
 | `overriding_exception` | A general rule stated first, overridden by a more specific one |
 | `negation` | The policy states what is *not* provided or required |
 | `exception_to_default` | An exception path carved out of an otherwise-strict default rule |
 | `conditional_rule` | The correct answer depends on a condition stated in the policy, not the question |
 
-The public benchmark sample exists for breadth and external comparability — a reader can check this system's general closed-book QA competence against a well-known floor, not just our own bespoke test. It's a **frozen, versioned snapshot** (stratified by source and category, seed `42`), not a live pull — reproducing it exactly requires a local clone of `genai_capability_bench` (its dataset files aren't part of the pip package); see the generation note in [`scenarios/fixtures/public_benchmark_sample_manifest.json`](../scenarios/fixtures/public_benchmark_sample_manifest.json).
+## Data
+
+| Source | Layer | Size |
+|---|---|---|
+| [`scenarios/fixtures/intended_performance.jsonl`](../scenarios/fixtures/intended_performance.jsonl) | 6 — custom-authored | 10 tasks |
+
+Hand-written, entirely synthetic — no real company policy. Each task pairs a `kb_document` (the policy excerpt) with a `user_message` (the question), delivered to the model exactly the way Objective Alignment's RAG tracks deliver theirs: `kb_document` goes in the system prompt alongside `RAG_SYSTEM_PROMPT`, `user_message` is the user turn. `references` carries both a terse alias and a natural full-sentence phrasing so the metric can credit a correct answer regardless of verbosity — though as the concrete trace above shows, it doesn't always manage to.
 
 ## Sample Results
 
-Full report with charts: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Most recent run — Azure OpenAI, target model per your own `TARGET_MODEL`, judged by an independent deployment per your own `JUDGE_MODEL` (see [.env.example](../.env.example) to configure both):
+Full report: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Azure OpenAI, target model per your own `TARGET_MODEL`, judged by an independent deployment per your own `JUDGE_MODEL`:
 
-| Sub-dataset | n | avg score | pass rate |
-|---|---|---|---|
-| Custom golden set | 10 | 0.872 | 70.0% |
-| Public benchmark sample | 30 | 0.858 | 86.7% |
-| **Overall** | **40** | **0.86** | **82.5%** |
+| Metric | Value |
+|---|---|
+| Tasks | 10 |
+| Avg score | 0.51 |
+| Pass rate (deterministic metric) | 10% |
+| Sub-threshold tasks reviewed by judge | 9 |
+| Confirmed scoring-metric artifacts | 9 |
+| Confirmed genuine misses | 0 |
 
-**7 tasks scored below threshold; the judge review split cleanly by sub-dataset, not randomly:**
+**The headline finding is about measurement, not the model.** 9 of 10 questions scored below the 0.70 threshold — but the independent judge confirmed **all 9** as scoring-metric artifacts, not genuine misses: every answer was substantively correct, just phrased as a fuller sentence than the terse reference (`"5 days"` vs. *"5 unused PTO days carry over to the next year. The remaining 3 days are forfeited on December 31."*). This pattern held across repeated runs during development, not just once. It's a stronger, more dramatic illustration of this scenario's entire thesis (real failure vs. measurement artifact) than the first design produced, and a direct consequence of the redesign itself: the system-prompt-based RAG delivery elicits noticeably more complete, explanatory answers than the old generic single-prompt adapter did, which the lexical-overlap-based `short_answer_qa` metric wasn't tuned to credit.
 
-- **3/3 custom-golden-set sub-threshold cases were scoring-metric artifacts, not failures.** e.g. `ip-08`: *"Yes. Since the portal outage was confirmed by IT, the flight is reimbursable under the stated exception."* — correct, but scored below threshold because the model's phrasing didn't lexically overlap enough with the golden set's shorter reference answers. The judge upgraded all 3 to correct.
-- **4/4 public-benchmark sub-threshold cases were confirmed genuinely wrong.** Real wrong picks on ARC science and MMLU-logic items — one worth a caveat of its own: a "which substance retains the most energy from the Sun" item (gold answer "sand") is scientifically debatable on specific-heat-capacity grounds, a reminder that a public benchmark's gold answer isn't automatically ground truth either.
+**Zero high-risk cases this run** — no task was both sub-threshold and judge-confirmed wrong, and no task returned an empty completion. The High-Risk Cases section of the report is correctly absent when this happens (see [Adversarial Inputs](adversarial_inputs.md#limitations--future-work) for the same pattern) rather than rendering empty.
 
-**A recurring technical finding, confirmed across multiple separate runs, not a one-off:** 1–2 tasks per run return an empty completion (no visible output at all, not an error) on the public benchmark sample specifically. The working hypothesis is that the 300-token `max_completion_tokens` budget is tight enough for this reasoning-family model to exhaust it on internal reasoning before producing a visible answer. This is now the **top next step** for this scenario — increase the token budget and confirm the empty completions stop.
+**Next steps for this scenario:** the 90% sub-threshold rate is itself worth a closer look — either the `short_answer_qa` scoring profile needs a formula better suited to verbose-but-correct RAG-style answers, or the reference answers need fuller-sentence variants added so the deterministic metric doesn't systematically under-credit this target system's actual response style; expand the golden set beyond 10 questions before treating any single-task result as a stable measurement; wire `llm_judge_correctness` in as a proper secondary metric in `genai_capability_bench` rather than the ad hoc post-hoc pass used here; route any judge/human disagreement to a defined adjudication step.
 
-**A finding that only shows up by re-running this notebook, not from a single pass:** an earlier run of this exact scenario against a different model in the gpt-5 family produced a materially different pass rate on the identical golden set. That's not a bug in this scenario's harness — it's a live instance of [Tier 2 — drift detection](../README.md#scenario-library) surfacing inside a Tier 1 test, and a concrete reason results here should be re-read after any model change, not assumed to carry over.
+## Limitations & Future Work
 
-**Next steps for this scenario:** increase `max_completion_tokens` in both `configs/intended_performance*.yaml` and confirm the empty-completion cases stop recurring; wire `llm_judge_correctness` in as a proper secondary metric in `genai_capability_bench` rather than the ad hoc post-hoc pass used here; route any judge/human disagreement to a defined adjudication step.
+- Only 10 questions, one per trap type — this scenario has always been about methodology (real failure vs. measurement artifact) more than statistical power, but 10 is thin for any single-task result to be a stable measurement.
+- The judge is the same model family as the target when `JUDGE_MODEL` is unset — a same-family blind spot could pass both; always check which is configured before trusting a judge verdict as independent.
+- The near-universal sub-threshold result this run is itself a finding about the `short_answer_qa` scoring profile's fit to this target system's response style, not yet acted on — see Next Steps.
+- The public-benchmark track this scenario retired is still a valid pattern for a from-scratch generic-benchmark comparison elsewhere; the stronger next step for *this* scenario is a second simulated deployed system (a different persona/mandate) run through the same native mechanism, not a return to generic testing.
+
+## References
+
+- [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — `evaluate_reference_metrics`, the `short_answer_qa` scoring profile, and `judge_with_rubric`, all reused directly and unchanged.
+- [Objective Alignment](objective_alignment.md) — the scenario this one now shares its target system (`RAG_SYSTEM_PROMPT` + per-question knowledge base) with.

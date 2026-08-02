@@ -92,7 +92,7 @@ Testing whether an enterprise GenAI system is *aligned* draws on capability meas
 
 | Scenario | Risk if untested | What we test | Existing coverage | Treatment |
 |---|---|---|---|---|
-| [Intended performance](docs/intended_performance.md) | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — answer accuracy, instruction following, reasoning | Adapter |
+| [Intended performance](docs/intended_performance.md) | Silent task failure or plausible-looking wrong output | Performs its defined task correctly and completely, tested against the same simulated HR/IT RAG assistant Objective Alignment tests for scope | [`genai_capability_bench`](https://github.com/minw0607/genai_capability_bench) — scoring machinery reused; run mechanism is native (the adapter has no system-prompt support) | Adapter + native |
 | [Objective alignment](docs/objective_alignment.md) | Behavior drifts from mandate or pursues unintended sub-goals | Stays aligned to objective & scope over a task and over time | *none* — no repo tests mandate/scope drift over a multi-step task | Native |
 | [Consistency & reliability](docs/consistency_reliability.md) | Same input yields different output; hallucination / variance | Repeatable, consistent outputs for equivalent inputs | `genai_capability_bench` (chatbot track, unchanged) + [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) (new agentic-track adapter) | Adapter + extend |
 
@@ -286,7 +286,7 @@ genai_alignment/
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Scaffold — README, license, scenario registry, dev-plan docs | ✅ Done |
-| 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light, uniform HTML report template built | ✅ Done |
+| 1a | [Intended performance](docs/intended_performance.md) — notebook 1, code-light; retired its generic public-benchmark track in favor of a native run against the same HR/IT RAG assistant Objective Alignment tests, uniform HTML report template built | ✅ Done |
 | 1b | [Consistency & reliability](docs/consistency_reliability.md) — notebook 2, chatbot + agentic tracks, statistical methodology aligned to published literature (semantic entropy, Wilson CIs, BH correction) | ✅ Done |
 | 1c | [Objective alignment](docs/objective_alignment.md) — notebook 3, a RAG assistant with a system-prompt mandate (single-turn + long-horizon tracks) plus a real agent mid-task pressure-injection track, shared 4-category drift-classification judge rubric | ✅ Done |
 | 2 | Tier 2 reuse — [adversarial inputs](docs/adversarial_inputs.md): two banking use cases built (notebook 4 — retail chatbot direct-injection adapter onto `llm_red_teaming`; financial document-review indirect-injection track, native, with a mitigation-effectiveness comparison); 4 other considered use cases + jailbreaking/adversarial-NLP slices still open | ✅ Done |
