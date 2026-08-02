@@ -58,7 +58,7 @@ import pandas as pd
 
 from adapters.red_teaming import PromptInjectionHarness
 from reporting.artifacts import Artifact
-from reporting.display import GENERIC_API_VERSION, GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
+from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
 OUTPUT_DIR = "outputs/runs/adversarial_inputs"
@@ -468,7 +468,6 @@ def build_report(
     canary: pd.DataFrame,
     doc_scored: pd.DataFrame,
     target_model: str,
-    api_version: str,
     charts: list[ChartImage],
     artifacts_table: pd.DataFrame | None = None,
 ) -> ScenarioReport:
@@ -517,9 +516,9 @@ def build_report(
         risk="Manipulated or unsafe behavior from conflicting / malicious input.",
         goal="Robustness to ambiguous, conflicting, adversarial inputs.",
         target_summary={
-            "Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
+            "Target type": "LLM-powered systems — a retail-banking chatbot and a document-review assistant, not a bare LLM call",
+            "LLM Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
             "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
-            "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Retail chatbot track": f"{len(canary)} attempts (direct vector, 3 banking tasks x 5 strategies)",
             "Document review track": f"{len(doc_scored)} runs ({len(APPLICANT_PROFILES)} profiles x 5 conditions)",
         },

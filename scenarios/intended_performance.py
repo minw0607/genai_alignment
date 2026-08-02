@@ -47,12 +47,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 from genai_capability_bench.metrics.registry import evaluate_reference_metrics
 
 from reporting.artifacts import Artifact
-from reporting.display import (
-    GENERIC_API_VERSION,
-    GENERIC_JUDGE_MODEL_NAME,
-    GENERIC_MODEL_NAME,
-    GENERIC_PROVIDER_NAME,
-)
+from reporting.display import GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.report import judge_borderline
 
@@ -173,13 +168,14 @@ def score_golden_set(results: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(scored)
 
 
-def target_summary_line(target_model: str, api_version: str) -> str:
-    """`target_model`/`api_version` are accepted for call-site symmetry with the
-    other scenarios but intentionally unused — the real deployment name and API
-    version are confidential to whoever runs this repo; see reporting/display.py."""
+def target_summary_line(target_model: str) -> str:
+    """`target_model` is accepted for call-site symmetry with the other
+    scenarios but intentionally unused — the real deployment name is
+    confidential to whoever runs this repo; see reporting/display.py."""
     return (
-        f"**Target:** {GENERIC_PROVIDER_NAME} · `{GENERIC_MODEL_NAME}` · API version `{GENERIC_API_VERSION}` · "
-        "temperature omitted, `max_completion_tokens` used as the token parameter "
+        f"**LLM Provider:** {GENERIC_PROVIDER_NAME}  \n"
+        f"**Model:** `{GENERIC_MODEL_NAME}`  \n"
+        "**Generation config:** temperature omitted, `max_completion_tokens` used as the token parameter "
         "(required for reasoning-family models that reject a bare `temperature`/`max_tokens` request)."
     )
 
@@ -366,7 +362,6 @@ def build_report(
     judged_subset: pd.DataFrame,
     charts: list[ChartImage],
     target_model: str,
-    api_version: str,
     artifacts_table: pd.DataFrame | None = None,
 ) -> ScenarioReport:
     overall_n = len(scored)
@@ -405,9 +400,9 @@ def build_report(
         risk="Silent task failure or plausible-looking wrong output.",
         goal="Performs its defined task correctly and completely.",
         target_summary={
-            "Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
+            "Target type": "LLM-powered system — a RAG assistant (system-prompt-defined mandate + per-question knowledge-base document), not a bare LLM call",
+            "LLM Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
             "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
-            "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Judge model": GENERIC_JUDGE_MODEL_NAME if os.environ.get("JUDGE_MODEL") else "<falls back to target model>",
             "Generation config": "temperature omitted; max_completion_tokens token parameter (reasoning-family model)",
             "Golden set track": f"{overall_n} HR/IT policy questions, system-prompt-defined RAG mandate (shared with Objective Alignment)",

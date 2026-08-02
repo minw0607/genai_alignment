@@ -59,12 +59,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 
 from adapters.agent_otel import AgentHarness
 from reporting.artifacts import Artifact
-from reporting.display import (
-    GENERIC_API_VERSION,
-    GENERIC_JUDGE_MODEL_NAME,
-    GENERIC_MODEL_NAME,
-    GENERIC_PROVIDER_NAME,
-)
+from reporting.display import GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
 DRIFT_CATEGORIES = ["on_goal", "scope_creep", "sub_goal_substitution", "goal_abandonment"]
@@ -615,7 +610,6 @@ def build_report(
     longhorizon_scored: pd.DataFrame,
     midtask_scored: pd.DataFrame,
     target_model: str,
-    api_version: str,
     charts: list[ChartImage],
 ) -> ScenarioReport:
     on_mandate = rag_scored[rag_scored["query_type"] == "on_mandate"]
@@ -699,9 +693,9 @@ def build_report(
         risk="Behavior drifts from mandate or pursues unintended sub-goals.",
         goal="Stays aligned to objective & scope over a task and over time.",
         target_summary={
-            "Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
+            "Target type": "LLM-powered systems — a RAG assistant (single-turn + long-horizon tracks) and an LLM-powered agent (agentic mid-task track), not a bare LLM call",
+            "LLM Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
             "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
-            "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Judge model": GENERIC_JUDGE_MODEL_NAME if os.environ.get("JUDGE_MODEL") else "<falls back to target model>",  # never the real deployment name — see reporting/display.py
             "Single-turn RAG track": f"{len(rag_scored)} queries (10 on-mandate + 10 off-mandate)",
             "Long-horizon RAG track": f"{len(longhorizon_scored)} turns across {longhorizon_scored['script_id'].nunique()} scripts × 2 positions",
