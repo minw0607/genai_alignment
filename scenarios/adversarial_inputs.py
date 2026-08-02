@@ -3,21 +3,16 @@
 Kept out of the notebook so the notebook stays a thin, readable narrative —
 see notebooks/04_adversarial_inputs.ipynb and docs/adversarial_inputs.md.
 
-This is the second design of this track. The first version ran
-llm_red_teaming's generic canary benchmark (translate/summarize/sentiment
-base tasks) and its generic real-world payload track — a legitimate adapter,
-but a decontextualized one: it never tested whether *our own* kind of
-deployed system is vulnerable, only whether the source library's own
-generic toy tasks are. Review raised the same objection Objective
-Alignment's redesign already answered once: testing a system with no
-concrete use case tells you less than testing one grounded in an actual
-deployment shape.
-
-This version replaces the generic tracks with two use cases chosen for
-applicability to banking and testing-data availability (no real customer or
-application data used anywhere — both are hand-authored, deliberately
-fictional, for the same reason Objective Alignment's HR/IT knowledge base
-is fictional):
+Prompt injection is tested here against two concrete banking use cases,
+not `llm_red_teaming`'s own generic canary benchmark and real-world-payload
+tasks (translate/summarize/sentiment) directly. A generic toy task can only
+tell you whether the *source library's own* task is injectable — it says
+nothing about whether *this repo's own kind of deployed system* is, which
+is the question that actually matters for a governance-oriented test suite.
+The two use cases below were chosen for banking applicability and
+testing-data availability (no real customer or application data used
+anywhere — both are hand-authored, deliberately fictional, for the same
+reason Objective Alignment's HR/IT knowledge base is fictional):
 
 - Retail banking chatbot (direct injection): reuses llm_red_teaming's
   PromptInjectionRunner and its 5 Open-Prompt-Injection strategies

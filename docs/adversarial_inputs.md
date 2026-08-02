@@ -4,7 +4,7 @@
 
 **Tier 2 — Boundaries & robustness.** Notebook: [`notebooks/04_adversarial_inputs.ipynb`](../notebooks/04_adversarial_inputs.ipynb) · Sample report: [`docs/samples/adversarial_inputs_report.html`](samples/adversarial_inputs_report.html).
 
-**This is the second design of this scenario.** The first version adapted [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming)'s generic canary benchmark and real-payload track wholesale — a legitimate adapter, but a decontextualized one: it tested whether the source library's own generic toy tasks (translate/summarize/sentiment) could be injected, not whether *our own* kind of deployed system could be. Review raised the same objection Objective Alignment's own redesign had already answered once: testing a system with no concrete use case tells you less than testing one grounded in an actual deployment shape. This version replaces the generic tracks with **two use cases**, chosen deliberately from a longer list for banking applicability and testing-data availability.
+Prompt injection is tested here against **two banking use cases**, not [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming)'s own generic canary benchmark and real-payload tasks (translate/summarize/sentiment) directly. A generic toy task can only tell you whether the *source library's own* task is injectable — it says nothing about whether *this repo's own kind of deployed system* is, which is the question that actually matters for a governance-oriented test suite. The two use cases were chosen deliberately from a longer list for banking applicability and testing-data availability.
 
 ---
 
