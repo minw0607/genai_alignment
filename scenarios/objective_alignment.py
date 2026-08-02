@@ -346,10 +346,12 @@ def run_rag_single_turn(dataset: pd.DataFrame, target_client) -> pd.DataFrame:
     before the user message is ever seen. No scoring here — see
     score_rag_single_turn."""
     records = []
-    for _, row in dataset.iterrows():
+    total = len(dataset)
+    for i, (_, row) in enumerate(dataset.iterrows()):
         system = f"{RAG_SYSTEM_PROMPT}\n\nKnowledge base:\n{row['kb_document']}"
         response = target_client.generate(row["user_message"], system=system)
         records.append({**row.to_dict(), "response": response.text})
+        print(f"[{i + 1}/{total}] {row['task_id']} done")
     return pd.DataFrame(records)
 
 

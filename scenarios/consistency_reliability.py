@@ -123,7 +123,7 @@ def run_chatbot_repeats(target_model: str, n: int = CHATBOT_N_REPEATS) -> dict:
         ("custom_golden_set", CUSTOM_CONFIG),
         ("public_benchmark_sample", PUBLIC_CONFIG),
     ]:
-        runs = repeat_runs(lambda cp=config_path: run_capability_scenario(cp)["results"], n)
+        runs = repeat_runs(lambda cp=config_path: run_capability_scenario(cp)["results"], n, label=label)
         combined = combine_repeats(runs)
         combined["dataset_label"] = label
         frames.append(combined)
@@ -134,7 +134,7 @@ def run_chatbot_repeats(target_model: str, n: int = CHATBOT_N_REPEATS) -> dict:
     def _run_rag_once() -> pd.DataFrame:
         return ip_scenario.score_golden_set(ip_scenario.run_golden_set(golden_set, rag_client))
 
-    rag_runs = repeat_runs(_run_rag_once, n)
+    rag_runs = repeat_runs(_run_rag_once, n, label="rag_assistant")
     rag_combined = combine_repeats(rag_runs)
     rag_combined["dataset_label"] = "rag_assistant"
     frames.append(rag_combined)
@@ -244,7 +244,10 @@ def run_agentic_repeats(
     tasks = harness.load_tasks(n_tasks)
     frames = []
     for mode in ["single", "multi"]:
-        runs = repeat_runs(lambda t=tasks, m=mode: harness.run(t, mode=m), n_repeats)
+        # verbose=True turns on AgentHarness.run's own per-task progress line
+        # (adapters/agent_otel.py) — each repeat here is a full task batch
+        # that can take minutes, so both levels of progress matter.
+        runs = repeat_runs(lambda t=tasks, m=mode: harness.run(t, mode=m, verbose=True), n_repeats, label=f"{mode}-agent")
         combined = combine_repeats(runs)
         combined["mode"] = mode
         frames.append(combined)

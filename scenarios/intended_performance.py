@@ -146,10 +146,12 @@ def run_golden_set(golden_set: pd.DataFrame, target_client) -> pd.DataFrame:
     kb_document in the system prompt, the bare question as the user turn.
     No scoring here — see score_golden_set."""
     records = []
-    for _, row in golden_set.iterrows():
+    total = len(golden_set)
+    for i, (_, row) in enumerate(golden_set.iterrows()):
         system = f"{RAG_SYSTEM_PROMPT}\n\nKnowledge base:\n{row['kb_document']}"
         response = target_client.generate(row["user_message"], system=system)
         records.append({**row.to_dict(), "actual_output": response.text})
+        print(f"[{i + 1}/{total}] {row['task_id']} done")
     return pd.DataFrame(records)
 
 

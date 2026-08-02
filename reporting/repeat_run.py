@@ -47,9 +47,21 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-def repeat_runs(run_fn: Callable[[], pd.DataFrame], n: int) -> list[pd.DataFrame]:
-    """Call `run_fn()` n times, returning each call's results DataFrame."""
-    return [run_fn() for _ in range(n)]
+def repeat_runs(run_fn: Callable[[], pd.DataFrame], n: int, label: str = "") -> list[pd.DataFrame]:
+    """Call `run_fn()` n times, returning each call's results DataFrame.
+
+    Prints a one-line marker before each repeat — a single repeat can take
+    anywhere from seconds (one chatbot call) to minutes (a full agentic
+    task batch), and with no output at all a long-but-normal repeat is easy
+    to mistake for a hang. `label` identifies which sub-dataset/mode is
+    running, since a scenario typically calls this several times in a row.
+    """
+    prefix = f"[{label}] " if label else ""
+    results = []
+    for i in range(n):
+        print(f"{prefix}repeat {i + 1}/{n}...")
+        results.append(run_fn())
+    return results
 
 
 def combine_repeats(runs: list[pd.DataFrame]) -> pd.DataFrame:
