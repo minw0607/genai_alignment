@@ -557,13 +557,23 @@ def build_report(
         ],
         key_metrics=[
             Metric(
+                value=f"{int((chatbot_var[chatbot_var['dataset_label']=='rag_assistant']['reliability_category'] == 'consistently_failing').sum())}/10",
+                label="rag_assistant: consistently failing",
+                sublabel="same 10 questions as custom_golden_set, native RAG mechanism",
+            ),
+            Metric(
+                value=f"{int((chatbot_var[chatbot_var['dataset_label']=='custom_golden_set']['reliability_category'] == 'consistently_failing').sum())}/10",
+                label="custom_golden_set: consistently failing",
+                sublabel="identical questions, generic adapter (no system prompt)",
+            ),
+            Metric(
                 value=f"{int((chatbot_var['reliability_category'] == 'unstable').sum())}/{len(chatbot_var)}",
                 label="Chatbot tasks genuinely unstable",
-                sublabel=f"{overall_flip_rate_chat:.0%} raw flip rate, {len(chatbot_var)} tasks tested",
+                sublabel=f"{overall_flip_rate_chat:.0%} raw flip rate, {len(chatbot_var)} tasks across all 3 sub-datasets",
             ),
             Metric(
                 value=f"{int((chatbot_var['reliability_category'] == 'consistently_failing').sum())}/{len(chatbot_var)}",
-                label="Chatbot tasks consistently failing",
+                label="Chatbot tasks consistently failing (all sub-datasets)",
                 sublabel="capability gap or scoring artifact, not instability",
             ),
             Metric(
