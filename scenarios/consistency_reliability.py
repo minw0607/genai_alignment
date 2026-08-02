@@ -5,13 +5,25 @@ see notebooks/02_consistency_reliability.ipynb and docs/consistency_reliability.
 
 Two tracks, testing two different kinds of "same input, run again":
 
-- Chatbot track: the same two golden sets from scenario 1 (Intended
-  Performance), each run N times through genai_capability_bench's evaluator.
-  "Consistent" = pass/fail doesn't flip across runs (raw flag) or fall
-  significantly below an acceptable floor once corrected for testing many
-  tasks at once (the rigorous version), and the raw answers cluster into one
-  meaning via bidirectional-entailment / semantic-entropy, not a TF-IDF
-  similarity threshold.
+- Chatbot track: **three** sub-datasets, each run N times. Two are
+  unchanged from this scenario's first design — scenario 1 (Intended
+  Performance)'s original custom golden set and public-benchmark sample,
+  both via genai_capability_bench's generic no-system-prompt adapter. The
+  third is new: the same 10 golden-set questions again, but delivered via
+  scenario 1's *current* mechanism — its actual RAG-assistant call
+  (`scenarios.intended_performance.run_golden_set`, system-prompt mandate +
+  per-question knowledge-base document). This scenario deliberately keeps
+  both the generic-adapter path and the use-case-grounded path rather than
+  retiring the former the way scenario 1 did for its own report — the
+  generic path still gives broad, cheap consistency coverage across 40
+  varied tasks, and having the *same 10 questions* under two different
+  delivery mechanisms turns into a real comparison for free: does adding a
+  system-prompt-defined mandate change how consistent the model is, for
+  identical questions? "Consistent" = pass/fail doesn't flip across runs
+  (raw flag) or fall significantly below an acceptable floor once corrected
+  for testing many tasks at once (the rigorous version), and the raw
+  answers cluster into one meaning via bidirectional-entailment /
+  semantic-entropy, not a TF-IDF similarity threshold.
 - Agentic track: a fixed Mind2Web task subset, run N times through
   multi_agent_otel_eval, in both single-agent and multi-agent mode.
   "Consistent" here is NOT text similarity — an agent's actions are compared
@@ -40,7 +52,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 from adapters.agent_otel import AgentHarness
 from adapters.capability_bench import run_capability_scenario
 from reporting.artifacts import Artifact
-from reporting.display import GENERIC_API_VERSION, GENERIC_MODEL_NAME
+from reporting.display import GENERIC_API_VERSION, GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import (
     add_pairwise_consistency,
@@ -52,6 +64,7 @@ from reporting.repeat_run import (
     repeat_runs,
     variance_by_task,
 )
+from scenarios import intended_performance as ip_scenario
 
 PALETTE = {"pass": "#2a9d8f", "fail": "#e76f51", "single": "#264653", "multi": "#e9c46a"}
 
@@ -96,9 +109,15 @@ def build_judge_client(target_model: str):
 
 # ---------------------------------------------------------------- Chatbot track
 
-def run_chatbot_repeats(n: int = CHATBOT_N_REPEATS) -> dict:
-    """Run both scenario-1 golden sets n times each. Returns combined long-format
-    results (one row per task per run) tagged with dataset_label."""
+def run_chatbot_repeats(target_model: str, n: int = CHATBOT_N_REPEATS) -> dict:
+    """Run all three chatbot sub-datasets n times each. Returns combined
+    long-format results (one row per task per run) tagged with dataset_label.
+
+    `custom_golden_set` and `rag_assistant` share the same 10 underlying
+    questions (same task_ids, ip-01..ip-10) delivered through two different
+    mechanisms — see module docstring. That's deliberate, but it means
+    `chatbot_variance` must group by (task_id, dataset_label), not task_id
+    alone, or the two tracks' rows would silently merge."""
     frames = []
     for label, config_path in [
         ("custom_golden_set", CUSTOM_CONFIG),
@@ -108,6 +127,18 @@ def run_chatbot_repeats(n: int = CHATBOT_N_REPEATS) -> dict:
         combined = combine_repeats(runs)
         combined["dataset_label"] = label
         frames.append(combined)
+
+    golden_set = ip_scenario.load_golden_set()
+    rag_client = ip_scenario.build_target_client(target_model)
+
+    def _run_rag_once() -> pd.DataFrame:
+        return ip_scenario.score_golden_set(ip_scenario.run_golden_set(golden_set, rag_client))
+
+    rag_runs = repeat_runs(_run_rag_once, n)
+    rag_combined = combine_repeats(rag_runs)
+    rag_combined["dataset_label"] = "rag_assistant"
+    frames.append(rag_combined)
+
     return {"results": pd.concat(frames, ignore_index=True), "n_repeats": n}
 
 
@@ -124,46 +155,55 @@ def chatbot_variance(
     results demonstrated the entailment method catches: see
     docs/consistency_reliability.md's Sample Results for the specific
     cases (correct-but-differently-worded answers, and vice versa) TF-IDF
-    similarity got wrong."""
+    similarity got wrong.
+
+    Grouped by (task_id, dataset_label), not task_id alone — custom_golden_set
+    and rag_assistant reuse the same task_ids (ip-01..ip-10) on purpose (see
+    run_chatbot_repeats), so dataset_label has to be part of the grouping key
+    or their rows would incorrectly merge into one variance row each."""
+    id_col = ["task_id", "dataset_label"]
     var = variance_by_task(
         chatbot_results,
-        id_col="task_id",
+        id_col=id_col,
         score_col="score",
         passed_col="passed",
-        passthrough_cols=["dataset_label", "category"],
+        passthrough_cols=["category"],
     )
     if use_semantic_entropy:
         if client is None:
             raise ValueError("client is required when use_semantic_entropy=True")
-        var = add_semantic_consistency(var, chatbot_results, id_col="task_id", text_col="actual_output", client=client)
+        var = add_semantic_consistency(var, chatbot_results, id_col=id_col, text_col="actual_output", client=client)
     else:
-        var = add_pairwise_consistency(var, chatbot_results, id_col="task_id", text_col="actual_output")
+        var = add_pairwise_consistency(var, chatbot_results, id_col=id_col, text_col="actual_output")
     var = add_wilson_ci(var)
     var = add_reliability_significance(var, min_acceptable_rate=MIN_ACCEPTABLE_PASS_RATE)
     var = add_reliability_category(var)
     return var
 
 
-def plot_chatbot_variance(variance: pd.DataFrame) -> ChartImage:
-    fig, axes = plt.subplots(1, 2, figsize=(14, 4.5))
+_DATASET_TAG = {"custom_golden_set": "custom", "rag_assistant": "rag", "public_benchmark_sample": "public"}
 
-    ordered = variance.sort_values(["dataset_label", "task_id"])
+
+def plot_chatbot_variance(variance: pd.DataFrame) -> ChartImage:
+    fig, axes = plt.subplots(1, 2, figsize=(16, 4.8))
+
+    ordered = variance.sort_values(["dataset_label", "task_id"]).copy()
+    # custom_golden_set and rag_assistant share task_ids (ip-01..ip-10) on
+    # purpose (see run_chatbot_repeats) — tag every label with its dataset so
+    # the two tracks' bars for "the same question" aren't mistaken for one.
+    short_id = ordered["task_id"].str.replace("answer_accuracy_knowledge_v1_", "", regex=False)
+    labels = ordered["dataset_label"].map(_DATASET_TAG).fillna(ordered["dataset_label"]) + ":" + short_id
+
     colors = ordered["flips"].map({True: PALETTE["fail"], False: PALETTE["pass"]})
     axes[0].bar(range(len(ordered)), ordered["score_std"], color=colors)
     axes[0].set_xticks(range(len(ordered)))
-    axes[0].set_xticklabels(
-        ordered["task_id"].str.replace("answer_accuracy_knowledge_v1_", "", regex=False),
-        rotation=75, ha="right", fontsize=7,
-    )
+    axes[0].set_xticklabels(labels, rotation=75, ha="right", fontsize=7)
     axes[0].set_ylabel("score std dev across runs")
     axes[0].set_title("Score variance by task (red = pass/fail flipped)")
 
     axes[1].bar(range(len(ordered)), ordered["semantic_consistency"], color=PALETTE["single"])
     axes[1].set_xticks(range(len(ordered)))
-    axes[1].set_xticklabels(
-        ordered["task_id"].str.replace("answer_accuracy_knowledge_v1_", "", regex=False),
-        rotation=75, ha="right", fontsize=7,
-    )
+    axes[1].set_xticklabels(labels, rotation=75, ha="right", fontsize=7)
     axes[1].set_ylim(0, 1.05)
     axes[1].set_ylabel("1 − normalized semantic entropy")
     axes[1].set_title("Semantic consistency of raw answers across runs")
@@ -177,7 +217,9 @@ def plot_chatbot_variance(variance: pd.DataFrame) -> ChartImage:
             "or several, via bidirectional-entailment clustering (Kuhn et al. 2024) rather than "
             "lexical similarity — a task can pass every run and still show clusters here if it "
             "means something different each time (or score 1.0 while phrasing it differently, "
-            "since entailment — unlike TF-IDF — recognizes paraphrase as equivalent)."
+            "since entailment — unlike TF-IDF — recognizes paraphrase as equivalent). Labels are "
+            "tagged `custom:`/`rag:`/`public:` — `custom` and `rag` are the *same 10 questions*, "
+            "delivered two different ways (see Methodology); compare them directly."
         ),
         base64_png=fig_to_base64(fig),
         section="results",
@@ -311,6 +353,22 @@ def _chatbot_observations(chatbot_var: pd.DataFrame) -> list[str]:
             "consistency (Kuhn et al. 2024) is meant to catch and TF-IDF similarity was not "
             "reliably catching before."
         )
+
+    custom = chatbot_var[chatbot_var["dataset_label"] == "custom_golden_set"]
+    rag = chatbot_var[chatbot_var["dataset_label"] == "rag_assistant"]
+    if len(custom) and len(rag):
+        obs.append(
+            f"**Same 10 questions, two delivery mechanisms — a real comparison, not just extra "
+            f"coverage:** `custom_golden_set` (generic adapter, no system prompt) averages "
+            f"{custom['semantic_consistency'].mean():.2f} semantic consistency and "
+            f"{custom['score_std'].mean():.2f} avg score std dev; `rag_assistant` (system-prompt "
+            f"mandate + knowledge-base document, scenario 1's current mechanism) averages "
+            f"{rag['semantic_consistency'].mean():.2f} and {rag['score_std'].mean():.2f} on the "
+            "identical questions. A material gap either direction would mean the mandate framing "
+            "itself changes how consistent the model is, not just what it scores — read the two "
+            "`reliability_category` columns side by side in the results table below before "
+            "concluding either way from the averages alone."
+        )
     return obs
 
 
@@ -348,15 +406,59 @@ def _agentic_observations(agentic_var: pd.DataFrame) -> list[str]:
     return obs
 
 
+def _high_risk_cases(chatbot_var: pd.DataFrame, agentic_var: pd.DataFrame) -> list[str]:
+    """The specific tasks this scenario actually exists to catch: genuine
+    run-to-run instability, not a consistently-failing capability gap or
+    scoring artifact riding along on the same significance test. Derived
+    dynamically from this run's own reliability_category, never hardcoded."""
+    cases = []
+    for _, row in chatbot_var[chatbot_var["reliability_category"] == "unstable"].iterrows():
+        cases.append(
+            f"Chatbot `{row['dataset_label']}` / `{row['task_id']}`: pass rate {row['pass_rate']:.0%} across "
+            f"{int(row['n_runs'])} runs (flipped pass/fail), semantic consistency "
+            f"{row['semantic_consistency']:.2f} — genuinely unstable, not a scoring-threshold artifact."
+        )
+    for _, row in agentic_var[agentic_var["reliability_category"] == "unstable"].iterrows():
+        cases.append(
+            f"Agentic `{row['mode']}`-agent task `{row['task_id']}`: pass rate {row['pass_rate']:.0%} across "
+            f"{int(row['n_runs'])} runs (flipped outcome), tool_f1 std dev {row['tool_f1_std']:.2f} — "
+            "genuinely unstable."
+        )
+    return cases
+
+
 def build_report(
     chatbot_var: pd.DataFrame,
     agentic_var: pd.DataFrame,
     target_model: str,
     api_version: str,
     charts: list[ChartImage],
+    artifacts_table: pd.DataFrame | None = None,
 ) -> ScenarioReport:
     overall_flip_rate_chat = chatbot_var["flips"].mean()
     overall_flip_rate_agent = agentic_var["flips"].mean()
+
+    n_unstable_chat = int((chatbot_var["reliability_category"] == "unstable").sum())
+    n_failing_chat = int((chatbot_var["reliability_category"] == "consistently_failing").sum())
+    n_unstable_agent = int((agentic_var["reliability_category"] == "unstable").sum())
+    n_failing_agent = int((agentic_var["reliability_category"] == "consistently_failing").sum())
+
+    executive_summary = (
+        f"This run tested whether the same input produces the same output across {CHATBOT_N_REPEATS} "
+        f"repeats (chatbot track, {len(chatbot_var)} task/dataset combinations across three sub-datasets — "
+        "a generic no-system-prompt path and the same questions again via scenario 1's actual RAG-assistant "
+        f"mechanism) and {AGENTIC_N_REPEATS} repeats (agentic track, {len(agentic_var)} task/mode "
+        "combinations, single- and multi-agent Mind2Web navigation). After correcting for testing many "
+        f"tasks at once (Benjamini-Hochberg): chatbot — {n_unstable_chat} genuinely unstable, "
+        f"{n_failing_chat} consistently failing (a capability gap or scoring artifact, not instability); "
+        f"agentic — {n_unstable_agent} genuinely unstable, {n_failing_agent} consistently failing. "
+        + (
+            "See High-Risk Cases for the specific genuinely-unstable tasks."
+            if (n_unstable_chat + n_unstable_agent) else
+            "No task in either track showed genuine run-to-run instability this run — every significant "
+            "finding was a repeatable capability gap or scoring artifact, not inconsistency."
+        )
+    )
 
     observations = _chatbot_observations(chatbot_var) + _agentic_observations(agentic_var)
     observations.append(
@@ -395,16 +497,27 @@ def build_report(
             "Provider": "Azure OpenAI",
             "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
             "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
-            "Chatbot track": f"{CHATBOT_N_REPEATS} repeats of scenario 1's 40-task golden set",
+            "Judge model": GENERIC_JUDGE_MODEL_NAME if os.environ.get("JUDGE_MODEL") else "<falls back to target model>",
+            "Chatbot track": (
+                f"{CHATBOT_N_REPEATS} repeats each of custom_golden_set, public_benchmark_sample "
+                "(scenario 1's original generic-adapter path), and rag_assistant (scenario 1's "
+                "current RAG-assistant mechanism, same 10 questions as custom_golden_set)"
+            ),
             "Agentic track": (
                 f"{AGENTIC_N_REPEATS} repeats of {AGENTIC_N_TASKS} Mind2Web tasks, "
                 "single-agent and multi-agent mode"
             ),
         },
         approach=(
-            "Two tracks, testing two different kinds of 'same input, run again.' Chatbot: reuses "
-            "scenario 1's two golden sets and adapter unchanged, run N times via "
-            "`reporting/repeat_run.py`'s generic repeat harness. Agentic: a new adapter "
+            "Two tracks, testing two different kinds of 'same input, run again.' Chatbot: three "
+            "sub-datasets, run N times via `reporting/repeat_run.py`'s generic repeat harness — "
+            "`custom_golden_set` and `public_benchmark_sample` reuse scenario 1's *original* "
+            "generic-adapter mechanism unchanged (no system prompt); `rag_assistant` repeats the "
+            "same 10 questions as `custom_golden_set` again, but via scenario 1's *current* native "
+            "RAG-assistant call (imported directly from `scenarios.intended_performance`) — kept "
+            "deliberately alongside the generic path rather than replacing it, so this scenario has "
+            "both broad generic-adapter coverage and a direct same-questions comparison of whether "
+            "a system-prompt-defined mandate changes consistency. Agentic: a new adapter "
             "(`adapters/agent_otel.py`) onto `multi_agent_otel_eval`'s `evaluate_batch()`, run N "
             "times on a fixed Mind2Web task subset in both single- and multi-agent mode. Both "
             "tracks share the same base variance function (`variance_by_task`) plus two "
@@ -418,11 +531,18 @@ def build_report(
         ),
         data_sections=[
             DataSection(
-                name="Chatbot: scenario 1's two golden sets",
+                name="Chatbot: custom_golden_set + public_benchmark_sample",
                 layer="Reused, not new",
-                source="Custom HR/IT policy set + public MMLU/TriviaQA/ARC sample",
+                source="Scenario 1's original custom HR/IT policy set + public MMLU/TriviaQA/ARC sample",
                 size=f"40 tasks × {CHATBOT_N_REPEATS} repeats = {40 * CHATBOT_N_REPEATS} calls",
-                description="Identical data to scenario 1 — this scenario only adds the repeat dimension.",
+                description="Identical data and mechanism to scenario 1's first design — this scenario only adds the repeat dimension.",
+            ),
+            DataSection(
+                name="Chatbot: rag_assistant",
+                layer="Reused data, new delivery mechanism",
+                source="Same 10 questions as custom_golden_set, via scenario 1's current RAG-assistant call",
+                size=f"10 tasks × {CHATBOT_N_REPEATS} repeats = {10 * CHATBOT_N_REPEATS} calls",
+                description="The same-questions-two-mechanisms comparison — see Approach.",
             ),
             DataSection(
                 name="Agentic: Mind2Web task subset",
@@ -464,8 +584,11 @@ def build_report(
             ("Agentic variance by task and mode", agentic_var),
         ],
         charts=charts,
+        executive_summary=executive_summary,
         observations=observations,
+        high_risk_cases=_high_risk_cases(chatbot_var, agentic_var),
         next_steps=next_steps,
+        artifacts_table=artifacts_table,
         notebook_link="../notebooks/02_consistency_reliability.ipynb",
         doc_link="../docs/consistency_reliability.md",
     )
@@ -498,23 +621,26 @@ def save_artifacts(
     return {k: str(v) for k, v in paths.items()}
 
 
-def artifacts(saved_paths: dict[str, str], report_path: str) -> list[Artifact]:
-    """Every file this scenario's run reads or produces, for the documentation trail."""
+def artifacts(saved_paths: dict[str, str]) -> list[Artifact]:
+    """Every file this scenario's run reads or produces, rendered into the
+    report's own Appendix (built before the report itself is saved, so the
+    report file isn't listed here — see scenarios/adversarial_inputs.py for
+    the same pattern)."""
     return [
         Artifact(
             "Custom golden set (input)", "scenarios/fixtures/intended_performance.jsonl",
-            "Reused unchanged from scenario 1 — versioned, not regenerated per run.",
+            "Reused from scenario 1 — same file drives both custom_golden_set and rag_assistant.",
         ),
         Artifact(
             "Public benchmark sample (input)", "scenarios/fixtures/public_benchmark_sample.jsonl",
-            "Reused unchanged from scenario 1 — versioned, not regenerated per run.",
+            "Reused unchanged from scenario 1's original design — versioned, not regenerated per run.",
         ),
         Artifact(
             "Mind2Web task cache (input)", "../Agent/outputs/data/mind2web_train.jsonl",
             "multi_agent_otel_eval's cached copy — outside this repo, in the sibling clone.",
         ),
         Artifact(
-            "Chatbot raw results (all 5 repeats)", saved_paths["chatbot_raw"],
+            "Chatbot raw results (all repeats, all 3 sub-datasets)", saved_paths["chatbot_raw"],
             "Every individual run's per-task score, not just the aggregated variance — gitignored, regenerated every run.",
         ),
         Artifact(
@@ -522,15 +648,11 @@ def artifacts(saved_paths: dict[str, str], report_path: str) -> list[Artifact]:
             "The aggregated table shown above, as its own file.",
         ),
         Artifact(
-            "Agentic raw results (all 5 repeats × 2 modes)", saved_paths["agentic_raw"],
+            "Agentic raw results (all repeats × 2 modes)", saved_paths["agentic_raw"],
             "Every individual agent run's score, tool calls, and outcome — gitignored, regenerated every run.",
         ),
         Artifact(
             "Agentic variance by task and mode", saved_paths["agentic_variance"],
             "The aggregated table shown above, as its own file.",
-        ),
-        Artifact(
-            "HTML testing report", report_path,
-            "The rendered report embedded above — scope, data, results, charts, and observations.",
         ),
     ]
