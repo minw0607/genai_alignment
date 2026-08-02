@@ -40,6 +40,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 from adapters.agent_otel import AgentHarness
 from adapters.capability_bench import run_capability_scenario
 from reporting.artifacts import Artifact
+from reporting.display import GENERIC_API_VERSION, GENERIC_MODEL_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import (
     add_pairwise_consistency,
@@ -392,8 +393,8 @@ def build_report(
         goal="Repeatable, consistent outputs for equivalent inputs.",
         target_summary={
             "Provider": "Azure OpenAI",
-            "Model": target_model,
-            "API version": api_version,
+            "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
+            "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Chatbot track": f"{CHATBOT_N_REPEATS} repeats of scenario 1's 40-task golden set",
             "Agentic track": (
                 f"{AGENTIC_N_REPEATS} repeats of {AGENTIC_N_TASKS} Mind2Web tasks, "

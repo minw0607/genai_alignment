@@ -19,6 +19,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 
 from adapters.capability_bench import run_capability_scenario
 from reporting.artifacts import Artifact
+from reporting.display import GENERIC_API_VERSION, GENERIC_MODEL_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.report import combine_runs, judge_borderline
 
@@ -125,8 +126,11 @@ def run() -> tuple[dict, str, str]:
 
 
 def target_summary_line(target_model: str, api_version: str) -> str:
+    """`target_model`/`api_version` are accepted for call-site symmetry with the
+    other scenarios but intentionally unused — the real deployment name and API
+    version are confidential to whoever runs this repo; see reporting/display.py."""
     return (
-        f"**Target:** Azure OpenAI · `{target_model}` · API version `{api_version}` · "
+        f"**Target:** Azure OpenAI · `{GENERIC_MODEL_NAME}` · API version `{GENERIC_API_VERSION}` · "
         "temperature omitted, `max_completion_tokens` used as the token parameter "
         "(required for reasoning-family models that reject a bare `temperature`/`max_tokens` request)."
     )
@@ -338,8 +342,8 @@ def build_report(
         goal="Performs its defined task correctly and completely.",
         target_summary={
             "Provider": "Azure OpenAI",
-            "Model": target_model,
-            "API version": api_version,
+            "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
+            "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Generation config": "temperature omitted; max_completion_tokens token parameter (reasoning-family model)",
         },
         approach=(

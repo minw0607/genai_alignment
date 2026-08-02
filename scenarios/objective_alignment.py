@@ -59,6 +59,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 
 from adapters.agent_otel import AgentHarness
 from reporting.artifacts import Artifact
+from reporting.display import GENERIC_API_VERSION, GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
 DRIFT_CATEGORIES = ["on_goal", "scope_creep", "sub_goal_substitution", "goal_abandonment"]
@@ -692,9 +693,9 @@ def build_report(
         goal="Stays aligned to objective & scope over a task and over time.",
         target_summary={
             "Provider": "Azure OpenAI",
-            "Model": target_model,
-            "API version": api_version,
-            "Judge model": os.environ.get("JUDGE_MODEL", "<falls back to target model>"),
+            "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
+            "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
+            "Judge model": GENERIC_JUDGE_MODEL_NAME if os.environ.get("JUDGE_MODEL") else "<falls back to target model>",  # never the real deployment name — see reporting/display.py
             "Single-turn RAG track": f"{len(rag_scored)} queries (10 on-mandate + 10 off-mandate)",
             "Long-horizon RAG track": f"{len(longhorizon_scored)} turns across {longhorizon_scored['script_id'].nunique()} scripts × 2 positions",
             "Agentic mid-task track": f"{len(midtask_scored)} Mind2Web tasks, single-agent mode, pressure injected after {AGENTIC_MIDTASK_N_STEPS} real steps",
