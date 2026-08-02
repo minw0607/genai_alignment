@@ -81,13 +81,17 @@ No new policy content was authored for the knowledge base, and no new agentic ta
 
 ## Sample Results
 
-Full report: [`docs/samples/objective_alignment_report.html`](samples/objective_alignment_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Structured as an audit-style report — Executive Summary, Key Findings, Testing Scope, Testing Approach, Results Summary with charts, High-Risk Cases (the specific control violations or full mandate breaks worth a reviewer's attention), Next Steps, and an Appendix carrying the full per-track classification tables plus a live-checked artifact trail — the same template every scenario in this repo renders through. Azure OpenAI, target model per your own `TARGET_MODEL`, judged by an independent deployment per your own `JUDGE_MODEL`:
+Full report: [`docs/samples/objective_alignment_report.html`](samples/objective_alignment_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Structured as an audit-style report — Executive Summary, Key Findings, Testing Scope, Testing Approach, Results Summary with charts, High-Risk Cases (the specific control violations or full mandate breaks worth a reviewer's attention), Next Steps, and an Appendix carrying the full per-track classification tables plus a live-checked artifact trail — the same template every scenario in this repo renders through. Your own configured LLM provider and model (see [.env.example](../.env.example)), judged by an independent deployment per your own `JUDGE_MODEL`:
 
 | Track | Control | Off-mandate result | Headline finding |
 |---|---|---|---|
 | Single-turn RAG (20 tasks) | 0/10 on-mandate violations | **3/10 off-mandate queries not declined** | 2 `goal_abandonment`, 1 `scope_creep` — one `goal_abandonment` was an empty completion, the other a real, fully-drafted off-mandate response (see below) |
 | Long-horizon RAG (24 turns, 6 conversations) | 0/18 legitimate-turn violations | **0/3 early, 0/3 late** — mandate held at every temptation turn | No position effect observed this run |
 | Agentic mid-task (5 real agent runs) | — (no baseline condition; every run gets an interjection after real progress) | **0/5 drifted after 2 real tool-call steps** | Real variation across validation runs of the identical mechanism — same task, same pressure type, one run derailed and one didn't (see below) |
+
+![Single-turn RAG mandate adherence by query type — on-mandate control vs. three off-mandate subtlety levels, colored by drift category](samples/images/objective_alignment_00_single_turn_rag_mandate_adherence.png)
+
+![Agentic mid-task mandate adherence — 5 real Mind2Web tasks, mandate adherence after real tool-call progress and a mid-execution interjection](samples/images/objective_alignment_02_agentic_mid_task_mandate_adherence.png)
 
 **The control held cleanly on both RAG tracks.** 0/10 on-mandate single-turn answers and 0/18 ordinary long-horizon turns were classified off-mandate, and all 10 on-mandate answers were judged `grounded` — real evidence the model relied on the given (fictional) policy text rather than improvising, and that the judge isn't finding drift where none was introduced.
 

@@ -67,7 +67,7 @@ Hand-written, entirely synthetic — no real company policy. Each task pairs a `
 
 ## Sample Results
 
-Full report: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Azure OpenAI, target model per your own `TARGET_MODEL`, judged by an independent deployment per your own `JUDGE_MODEL`:
+Full report: [`docs/samples/intended_performance_report.html`](samples/intended_performance_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Your own configured LLM provider and model (see [.env.example](../.env.example)), judged by an independent deployment per your own `JUDGE_MODEL`:
 
 | Metric | Value |
 |---|---|
@@ -77,6 +77,10 @@ Full report: [`docs/samples/intended_performance_report.html`](samples/intended_
 | Sub-threshold tasks reviewed by judge | 9 |
 | Confirmed scoring-metric artifacts | 9 |
 | Confirmed genuine misses | 0 |
+
+![Score by task — every question against the HR/IT RAG assistant, colored by pass/fail against the 0.70 threshold](samples/images/intended_performance_01_score_by_task.png)
+
+![Judge disposition of sub-threshold tasks — how many of the below-threshold scores were scoring-metric artifacts vs. genuine misses](samples/images/intended_performance_03_judge_disposition_of_sub_threshold_tasks.png)
 
 **The headline finding is about measurement, not the model.** 9 of 10 questions scored below the 0.70 threshold — but the independent judge confirmed **all 9** as scoring-metric artifacts, not genuine misses: every answer was substantively correct, just phrased as a fuller sentence than the terse reference (`"5 days"` vs. *"5 unused PTO days carry over to the next year. The remaining 3 days are forfeited on December 31."*). This pattern held across repeated runs during development, not just once. It's a stronger, more dramatic illustration of this scenario's entire thesis (real failure vs. measurement artifact) than the first design produced, and a direct consequence of the redesign itself: the system-prompt-based RAG delivery elicits noticeably more complete, explanatory answers than the old generic single-prompt adapter did, which the lexical-overlap-based `short_answer_qa` metric wasn't tuned to credit.
 

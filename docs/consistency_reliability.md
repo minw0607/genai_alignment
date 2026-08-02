@@ -71,7 +71,7 @@ No new content was authored for this scenario — `custom_golden_set` and `rag_a
 
 ## Sample Results
 
-Full report: [`docs/samples/consistency_reliability_report.html`](samples/consistency_reliability_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Azure OpenAI, target model per your own `TARGET_MODEL`, judged by a genuinely independent deployment per your own `JUDGE_MODEL`:
+Full report: [`docs/samples/consistency_reliability_report.html`](samples/consistency_reliability_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Your own configured LLM provider and model (see [.env.example](../.env.example)), judged by a genuinely independent deployment per your own `JUDGE_MODEL`:
 
 | Sub-dataset / mode | Flip rate | Genuinely unstable | Consistently failing | Avg semantic consistency |
 |---|---|---|---|---|
@@ -80,6 +80,10 @@ Full report: [`docs/samples/consistency_reliability_report.html`](samples/consis
 | Chatbot `rag_assistant` (10) | 2/10 | 1 | 8 | 0.83 |
 | Agentic `multi`-agent (5) | 4/5 | 0 | 0 | — |
 | Agentic `single`-agent (5) | 1/5 | 1 | 4 | — |
+
+![Chatbot repeat-run variance — score variance by task (left) and semantic consistency of raw answers (right), tagged custom:/public:/rag: by sub-dataset](samples/images/consistency_reliability_00_chatbot_repeat_run_variance.png)
+
+![Agentic repeat-run variance — task-score variance across repeated Mind2Web runs, single-agent vs. multi-agent, red bars flipped pass/fail at least once](samples/images/consistency_reliability_01_agentic_repeat_run_variance.png)
 
 **The same-10-questions comparison is the headline finding, and it's dramatic.** `custom_golden_set` (generic adapter, no system prompt) mostly *passes* the deterministic threshold; `rag_assistant` (system-prompt mandate + knowledge-base document — scenario 1's current mechanism) mostly *fails* it, identically, run after run: 8 of 10 `rag_assistant` questions landed in `consistently_failing`, vs. 1 of 10 for `custom_golden_set`. This is not a correctness difference — scenario 1's own judge review already established that the RAG-assistant mechanism's answers are substantively correct, just phrased as fuller sentences than the terse reference the deterministic metric expects. Read together with scenario 1's findings, this is exactly the "consistently failing ≠ instability" distinction `reliability_category` exists for: the near-zero `rag_assistant` pass rate is *itself* highly consistent (the same scoring-threshold artifact every run), not evidence the model is unreliable at these questions.
 

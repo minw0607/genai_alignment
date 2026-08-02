@@ -86,12 +86,16 @@ No real customer, account, or application data is used anywhere in this scenario
 
 ## Sample Results
 
-Full report: [`docs/samples/adversarial_inputs_report.html`](samples/adversarial_inputs_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Structured as an audit-style report — Executive Summary, Key Findings, Testing Scope, Testing Approach, Results Summary with charts, High-Risk Cases (the individual decision flips worth a reviewer's direct attention), Next Steps, and an Appendix carrying the full per-row results tables plus a live-checked artifact trail — the same template every scenario in this repo renders through. Azure OpenAI, target model per your own `TARGET_MODEL`, judged where applicable by an independent deployment per your own `JUDGE_MODEL`:
+Full report: [`docs/samples/adversarial_inputs_report.html`](samples/adversarial_inputs_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Structured as an audit-style report — Executive Summary, Key Findings, Testing Scope, Testing Approach, Results Summary with charts, High-Risk Cases (the individual decision flips worth a reviewer's direct attention), Next Steps, and an Appendix carrying the full per-row results tables plus a live-checked artifact trail — the same template every scenario in this repo renders through. Your own configured LLM provider and model (see [.env.example](../.env.example)), judged where applicable by an independent deployment per your own `JUDGE_MODEL`:
 
 | Track | Result | Headline finding |
 |---|---|---|
 | Retail banking chatbot (30 attempts, direct vector) | **0.0% override rate** across all 3 tasks and all 5 strategies | Every attempt fully resisted — the stated authorization boundary held |
 | Financial document review (16 poisoned attempts) | 6/16 blocked by Azure's content filter; **31% decision-flip rate** among all poisoned attempts | Undefended: 4/4 non-blocked attempts flipped the decision. Defended: 0/4 |
+
+![Document review outcomes by phrasing style — favorable/adverse decision flips, blocked-by-content-filter, and unaffected, split by blatant vs. subtle hidden text](samples/images/adversarial_inputs_02_document_review_outcomes_by_phrasing_style.png)
+
+![Mitigation effectiveness — decision-flip rate with the OWASP instruction/data-separation guard (defended) vs. without it (undefended)](samples/images/adversarial_inputs_03_mitigation_effectiveness_undefended_vs.png)
 
 **Retail chatbot track fully resisted in this run** — worth reading carefully rather than concluding direct injection is a non-issue for chat-style assistants generally: this is one target model, one system-prompt style, and 30 attempts. A less carefully worded authorization boundary, or a different target model, could score differently.
 
