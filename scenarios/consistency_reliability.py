@@ -52,7 +52,12 @@ from genai_capability_bench.core.schemas import ModelSpec
 from adapters.agent_otel import AgentHarness
 from adapters.capability_bench import run_capability_scenario
 from reporting.artifacts import Artifact
-from reporting.display import GENERIC_API_VERSION, GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME
+from reporting.display import (
+    GENERIC_API_VERSION,
+    GENERIC_JUDGE_MODEL_NAME,
+    GENERIC_MODEL_NAME,
+    GENERIC_PROVIDER_NAME,
+)
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import (
     add_pairwise_consistency,
@@ -497,7 +502,7 @@ def build_report(
         risk="Same input yields different output; hallucination / variance.",
         goal="Repeatable, consistent outputs for equivalent inputs.",
         target_summary={
-            "Provider": "Azure OpenAI",
+            "Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
             "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
             "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Judge model": GENERIC_JUDGE_MODEL_NAME if os.environ.get("JUDGE_MODEL") else "<falls back to target model>",

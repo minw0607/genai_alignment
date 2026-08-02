@@ -58,7 +58,7 @@ import pandas as pd
 
 from adapters.red_teaming import PromptInjectionHarness
 from reporting.artifacts import Artifact
-from reporting.display import GENERIC_API_VERSION, GENERIC_MODEL_NAME
+from reporting.display import GENERIC_API_VERSION, GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
 OUTPUT_DIR = "outputs/runs/adversarial_inputs"
@@ -517,7 +517,7 @@ def build_report(
         risk="Manipulated or unsafe behavior from conflicting / malicious input.",
         goal="Robustness to ambiguous, conflicting, adversarial inputs.",
         target_summary={
-            "Provider": "Azure OpenAI",
+            "Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
             "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
             "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Retail chatbot track": f"{len(canary)} attempts (direct vector, 3 banking tasks x 5 strategies)",

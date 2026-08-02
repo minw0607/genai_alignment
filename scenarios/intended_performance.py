@@ -47,7 +47,12 @@ from genai_capability_bench.core.schemas import ModelSpec
 from genai_capability_bench.metrics.registry import evaluate_reference_metrics
 
 from reporting.artifacts import Artifact
-from reporting.display import GENERIC_API_VERSION, GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME
+from reporting.display import (
+    GENERIC_API_VERSION,
+    GENERIC_JUDGE_MODEL_NAME,
+    GENERIC_MODEL_NAME,
+    GENERIC_PROVIDER_NAME,
+)
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.report import judge_borderline
 
@@ -173,7 +178,7 @@ def target_summary_line(target_model: str, api_version: str) -> str:
     other scenarios but intentionally unused — the real deployment name and API
     version are confidential to whoever runs this repo; see reporting/display.py."""
     return (
-        f"**Target:** Azure OpenAI · `{GENERIC_MODEL_NAME}` · API version `{GENERIC_API_VERSION}` · "
+        f"**Target:** {GENERIC_PROVIDER_NAME} · `{GENERIC_MODEL_NAME}` · API version `{GENERIC_API_VERSION}` · "
         "temperature omitted, `max_completion_tokens` used as the token parameter "
         "(required for reasoning-family models that reject a bare `temperature`/`max_tokens` request)."
     )
@@ -400,7 +405,7 @@ def build_report(
         risk="Silent task failure or plausible-looking wrong output.",
         goal="Performs its defined task correctly and completely.",
         target_summary={
-            "Provider": "Azure OpenAI",
+            "Provider": GENERIC_PROVIDER_NAME,  # never "Azure OpenAI" hardcoded — see reporting/display.py
             "Model": GENERIC_MODEL_NAME,  # never the real deployment name — see reporting/display.py
             "API version": GENERIC_API_VERSION,  # never the real value — see reporting/display.py
             "Judge model": GENERIC_JUDGE_MODEL_NAME if os.environ.get("JUDGE_MODEL") else "<falls back to target model>",
