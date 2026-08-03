@@ -140,15 +140,20 @@ def build_target_client(target_model: str):
     return create_client(target_spec)
 
 
-def run_golden_set(golden_set: pd.DataFrame, target_client) -> pd.DataFrame:
+def run_golden_set(golden_set: pd.DataFrame, target_client, system_prompt: str = RAG_SYSTEM_PROMPT) -> pd.DataFrame:
     """Every question goes to the same simulated HR/IT RAG assistant that
-    Objective Alignment tests: RAG_SYSTEM_PROMPT plus that row's own
+    Objective Alignment tests: `system_prompt` plus that row's own
     kb_document in the system prompt, the bare question as the user turn.
-    No scoring here — see score_golden_set."""
+    `system_prompt` defaults to this module's own RAG_SYSTEM_PROMPT — every
+    existing caller (this notebook, Consistency & Reliability, Drift
+    Detection's model-version and control tracks) keeps using that unchanged;
+    the override exists for Drift Detection's prompt-drift track, which needs
+    to hold the model fixed and vary only the wording under test. No scoring
+    here — see score_golden_set."""
     records = []
     total = len(golden_set)
     for i, (_, row) in enumerate(golden_set.iterrows()):
-        system = f"{RAG_SYSTEM_PROMPT}\n\nKnowledge base:\n{row['kb_document']}"
+        system = f"{system_prompt}\n\nKnowledge base:\n{row['kb_document']}"
         response = target_client.generate(row["user_message"], system=system)
         records.append({**row.to_dict(), "actual_output": response.text})
         print(f"[{i + 1}/{total}] {row['task_id']} done")
