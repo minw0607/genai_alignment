@@ -33,8 +33,14 @@ RAG_SYSTEM_PROMPT mandate — no new dataset authored here):
    `semantic_consistency` helper, since that only reports a single group's
    internal entropy, not which text is the group's most common meaning —
    confirm candidate answers still mean what baseline's most common answer
-   meant). "Material" drift on either axis means the shift is bigger than
-   what the baseline's own noise floor would explain, not just a raw diff.
+   meant). "Material" drift on either axis means a **two-sample test**
+   rejects "these two groups are the same" — a Welch-style z-test on the
+   continuous score, a two-proportion z-test on the semantic match rate —
+   accounting for both groups' own sampling variance, not a raw diff and
+   not baseline treated as a fixed, certain point (an earlier CI-vs-point
+   version of this test structurally false-flagged whenever baseline
+   happened to be perfectly self-consistent; caught by the harness
+   validation below, not by inspection — see docs/drift_detection.md).
 3. **Harness validation** — the doc's own stated bar ("test the control, not
    the calendar"): a drift detector that's never been shown to detect
    anything, or to stay quiet on nothing, isn't validated. Two synthetic
@@ -55,6 +61,7 @@ retiring older snapshots is itself evidence for the risk this scenario tests.
 
 from __future__ import annotations
 
+import math
 import os
 from datetime import date
 from pathlib import Path
@@ -74,7 +81,6 @@ from reporting.repeat_run import (
     combine_repeats,
     repeat_runs,
     variance_by_task,
-    wilson_interval,
 )
 from scenarios import intended_performance as ip_scenario
 
@@ -294,13 +300,53 @@ def _dominant_representative(texts: list[str], client) -> str:
 
 def cross_version_match_rate(baseline_texts: list[str], candidate_texts: list[str], client) -> tuple[float, int, int]:
     """Share of candidate texts that still bidirectionally entail baseline's
-    dominant (most common) answer — the semantic-drift signal."""
+    dominant (most common) answer — the semantic-drift signal. Called with
+    baseline_texts as *both* arguments gives baseline's own match rate
+    against its own representative — its "self-match rate," used below as
+    the other side of a two-sample comparison, not a bare point estimate."""
     representative = _dominant_representative(baseline_texts, client)
     valid_candidates = [t for t in candidate_texts if isinstance(t, str) and t.strip()]
     if not valid_candidates:
         return 0.0, 0, len(candidate_texts)
     matches = sum(1 for t in valid_candidates if bidirectional_entailment(client, representative, t))
     return matches / len(candidate_texts), matches, len(candidate_texts)
+
+
+def _two_sample_mean_material(mean_a: float, std_a: float, n_a: int, mean_b: float, std_b: float, n_b: int, z_threshold: float = 1.96) -> bool:
+    """Welch-style two-sample z-test on a continuous mean (the score axis).
+
+    Replaces an earlier pass-rate-only version of this check: comparing
+    binary pass/fail rate is blind to real score movement that never crosses
+    the 0.7 threshold in either direction (e.g. 0.62 -> 0.36 is a large,
+    real shift but reads as "0/5 passing -> 0/5 passing" either way). Using
+    the continuous score directly, with both groups' own variance in the
+    standard error, catches that movement."""
+    se = math.sqrt((std_a**2) / max(n_a, 1) + (std_b**2) / max(n_b, 1))
+    if se == 0:
+        return mean_a != mean_b
+    return abs(mean_a - mean_b) / se > z_threshold
+
+
+def _two_proportion_material(p_a: float, n_a: int, p_b: float, n_b: int, z_threshold: float = 1.96) -> bool:
+    """Two-proportion z-test (the semantic axis's match rate).
+
+    Replaces an earlier version that checked whether a Wilson CI built from
+    the *candidate's* own repeats excluded the *baseline's* bare point
+    estimate — that treats baseline's own rate as certain (zero sampling
+    uncertainty), which structurally guarantees a false flag whenever
+    baseline happened to be perfectly self-consistent (rate 1.0): with n=5,
+    a candidate CI for 4/5 tops out around 0.96 and can never reach 1.0, so
+    a single non-matching sample out of 5 — ordinary LLM-judge/paraphrase
+    noise, not real drift — was enough to flag every time. A two-proportion
+    test accounts for *both* groups' sample sizes, so a single disagreement
+    against a small n on both sides reads as noise, not a signal."""
+    if n_a == 0 or n_b == 0:
+        return False
+    p_pool = (p_a * n_a + p_b * n_b) / (n_a + n_b)
+    se = math.sqrt(p_pool * (1 - p_pool) * (1 / n_a + 1 / n_b))
+    if se == 0:
+        return p_a != p_b
+    return abs(p_a - p_b) / se > z_threshold
 
 
 def score_drift_vs_baseline(
@@ -310,37 +356,46 @@ def score_drift_vs_baseline(
     judge_client,
 ) -> pd.DataFrame:
     """Per-task drift row for one candidate version against the baseline
-    version. "Material" on either axis means the shift is bigger than what
-    baseline's own noise floor would explain — a Wilson CI on the candidate's
-    own rate excluding baseline's point estimate — not just a raw diff,
-    following the same tolerance-band-not-eyeballed principle
-    add_reliability_significance already applies elsewhere in this repo."""
+    version. "Material" on either axis means a two-sample test (see
+    _two_sample_mean_material / _two_proportion_material) rejects "these two
+    groups are the same," accounting for *both* groups' own sampling
+    variance — not a raw diff, and not baseline treated as a fixed, certain
+    reference point, following the same tolerance-band-not-eyeballed
+    principle add_reliability_significance already applies elsewhere in
+    this repo, extended to a proper two-sample comparison."""
     rows = []
     for task_id, cand_group in candidate_results.groupby("task_id"):
         base_group = baseline_results[baseline_results["task_id"] == task_id]
         base_var_row = baseline_var[baseline_var["task_id"] == task_id].iloc[0]
 
         cand_scores = cand_group["score"]
-        cand_pass_n = int(cand_group["passed"].sum())
         cand_n = len(cand_group)
-        score_ci_low, score_ci_high = wilson_interval(cand_pass_n, cand_n)
-        material_score_drift = not (score_ci_low <= base_var_row["pass_rate"] <= score_ci_high)
-
-        match_rate, n_matches, n_candidates = cross_version_match_rate(
-            list(base_group["actual_output"]), list(cand_group["actual_output"]), judge_client,
+        material_score_drift = _two_sample_mean_material(
+            float(base_var_row["avg_score"]), float(base_var_row["score_std"]), int(base_var_row["n_runs"]),
+            float(cand_scores.mean()), float(cand_scores.std() or 0.0), cand_n,
         )
-        sem_ci_low, sem_ci_high = wilson_interval(n_matches, n_candidates)
-        material_semantic_drift = not (sem_ci_low <= base_var_row["semantic_consistency"] <= sem_ci_high)
+
+        baseline_texts = list(base_group["actual_output"])
+        base_self_match_rate, base_self_matches, base_self_n = cross_version_match_rate(
+            baseline_texts, baseline_texts, judge_client,
+        )
+        match_rate, n_matches, n_candidates = cross_version_match_rate(
+            baseline_texts, list(cand_group["actual_output"]), judge_client,
+        )
+        material_semantic_drift = _two_proportion_material(
+            base_self_match_rate, base_self_n, match_rate, n_candidates,
+        )
 
         rows.append({
             "task_id": task_id,
             "baseline_avg_score": round(float(base_var_row["avg_score"]), 3),
             "candidate_avg_score": round(float(cand_scores.mean()), 3),
             "score_delta": round(float(cand_scores.mean() - base_var_row["avg_score"]), 3),
-            "candidate_pass_rate": round(cand_pass_n / cand_n, 3),
+            "candidate_pass_rate": round(float(cand_group["passed"].mean()), 3),
             "baseline_pass_rate": round(float(base_var_row["pass_rate"]), 3),
             "material_score_drift": material_score_drift,
             "semantic_match_rate": round(match_rate, 3),
+            "baseline_self_match_rate": round(base_self_match_rate, 3),
             "baseline_semantic_consistency": round(float(base_var_row["semantic_consistency"]), 3),
             "material_semantic_drift": material_semantic_drift,
             "material_drift": material_score_drift or material_semantic_drift,
@@ -522,8 +577,8 @@ def _high_risk_cases(sweep_drift: pd.DataFrame, floating_drift: pd.DataFrame | N
         cases.append(
             f"`{row['task_id']}`: material drift ({axis}) — baseline vs. `{row['version_label']}` — "
             f"score {row['baseline_avg_score']:.2f} → {row['candidate_avg_score']:.2f}, semantic match "
-            f"to baseline's dominant answer {row['semantic_match_rate']:.0%} "
-            f"(baseline's own internal consistency: {row['baseline_semantic_consistency']:.0%})."
+            f"to baseline's dominant answer {row['semantic_match_rate']:.0%} vs. baseline's own "
+            f"self-match rate {row['baseline_self_match_rate']:.0%}."
         )
     if floating_drift is not None:
         for _, row in floating_drift[floating_drift["material_drift"]].iterrows():
@@ -605,9 +660,14 @@ def build_report(
             "bidirectional-entailment semantic-consistency machinery, unchanged from Consistency & "
             "Reliability's use of the same functions). A new cross-version drift score compares each "
             "candidate version against the baseline's dominant answer on two axes — deterministic score "
-            "and substantive meaning — and calls a shift 'material' only when it exceeds what the "
-            "baseline's own Wilson-CI noise floor would explain, the same tolerance-band-not-eyeballed "
-            "principle this repo's reliability significance test already applies. Two synthetic controls "
+            "and substantive meaning — and calls a shift 'material' only when a two-sample test (Welch-"
+            "style z-test on the continuous score, two-proportion z-test on the semantic match rate) "
+            "rejects 'these two groups are the same,' accounting for *both* groups' own sampling "
+            "variance rather than treating baseline as a fixed, certain reference point — the same "
+            "tolerance-band-not-eyeballed principle this repo's reliability significance test already "
+            "applies, extended to a proper two-sample comparison after an earlier CI-vs-point version "
+            "was shown (by the harness-validation controls below) to false-flag whenever baseline "
+            "happened to be perfectly self-consistent. Two synthetic controls "
             "against the same baseline snapshot (an unperturbed re-run, a deliberately corrupted system "
             "prompt) validate that the pipeline actually has the power to detect a real change and to "
             "stay quiet on a non-change, per the design doc's own stated bar."
