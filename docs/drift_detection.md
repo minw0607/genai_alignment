@@ -2,7 +2,11 @@
 
 [← Back to README](../README.md)
 
-**Tier 2 — Boundaries & robustness.** This scenario is one of the six with no equivalent in a sibling repo — it is native to `genai_alignment`. This doc captures its design at the same level of detail the notebook and adapter/native module will implement.
+**Tier 2 — Boundaries & robustness.** Notebook: [`notebooks/05_drift_detection.ipynb`](../notebooks/05_drift_detection.ipynb) · one of the six scenarios with no equivalent in a sibling repo — native to `genai_alignment`.
+
+**A single notebook run happens at one point in time, but "drift" is a question about behavior *over* time.** This scenario resolves that by using **model version as the time axis** instead of waiting for calendar time to pass: vendor-shipped dated snapshots of the same model family are themselves real, time-separated data points. `DRIFT_MODEL_SEQUENCE` (`.env`) holds that lineage; an optional `DRIFT_FLOATING_MODEL` adds a live, undated, auto-updating alias as a cheap stand-in for the *other* kind of drift — a floating deployment silently changing behavior with no version bump to see. Everything runs against the exact same HR/IT golden set [Intended Performance](intended_performance.md) already scores for correctness — no new dataset authored for this scenario.
+
+**A concrete finding from building it, not a hypothetical:** the version lineage originally planned spanned 6 dated GPT-5.x snapshots across ~8 months. A pre-build connectivity check against every candidate found that the 4 oldest now return HTTP 410 ("deployment retired") on this deployment — confirmed via live calls, not assumed. Only 2 of the 6 survived to be testable. That's kept as documented history, not silently dropped: **a version lineage this scenario has to plan around a vendor retiring older pinned snapshots is itself evidence for the risk this scenario tests**, and directly validates this doc's own "test the control, not the calendar" argument below — waiting for drift to show up isn't the only failure mode; losing access to the baseline you'd compare against is another.
 
 ---
 
@@ -73,6 +77,12 @@ A single before/after diff can't tell real drift from noise, and can't tell you 
 
 **Then: the control operates.** Drift detection is a monitoring control, not a point-in-time test — the harness re-runs per release and on a set cadence, and the calibrated baseline, thresholds, and capability stay with Internal Audit, not with whoever ran it once.
 
+**How the notebook implements these three checks:**
+
+- **Noise floor** — N repeats at every version in the lineage, reusing the exact same variance and bidirectional-entailment semantic-consistency machinery [Consistency & Reliability](consistency_reliability.md) already established (`reporting/repeat_run.py`), grouped by version instead of dataset. A shift only counts as material drift when it falls outside a Wilson confidence interval built from the candidate's own repeats — the same tolerance-band-not-eyeballed principle, not a raw diff against a guessed threshold.
+- **Inject controlled drift** — two synthetic batches against the *same* baseline snapshot: an unperturbed second batch (expect: quiet) and a batch run against a system prompt deliberately corrupted to double every cited policy number (expect: flagged on most tasks). Both go through the identical drift-scoring pipeline used on the real version sweep, not a separate stub.
+- **Backtest across versions** — this is what `DRIFT_MODEL_SEQUENCE` operationalizes: real vendor-dated snapshots stand in for "prior model snapshots," available today without waiting. See the retirement finding above for why this run's actual backtest depth (2 live points) came in shorter than planned (6).
+
 ---
 
 ## Minimal requirements to run
@@ -101,3 +111,13 @@ The golden set reuses the same task set as [intended performance](../README.md#s
 | Disposition & Gate | 6 · Findings & Reporting |
 
 No new pipeline stages are needed — drift detection is the general pipeline with a mandatory versioned-baseline artifact and a repeat cadence, which is exactly what the [repeat loop](../README.md#the-repeat-loop) in the README already anticipated.
+
+---
+
+## Limitations & Future Work
+
+- **Only 2 of 6 originally candidate dated snapshots are live.** The other 4 (spanning 2025-08 through 2026-03) were retired by this deployment before this scenario could reach them — see the finding at the top of this doc. The version-lineage trajectory this run can actually show is a single before/after comparison (~7 weeks apart), not the richer multi-point curve the design anticipated. A longer-lived or explicitly version-pinned deployment tier would fix this going forward, not a code change.
+- **No genuine long-running calendar-drift observation yet.** `DRIFT_FLOATING_MODEL` (a live, undated, auto-updating alias compared against the last pinned snapshot) is the closest this scenario gets to the silent/calendar-drift risk without literally waiting for real time to pass — it's a same-sitting proxy, not a substitute for actually re-running this notebook on a cadence and comparing across real calendar time, which the design's own repeat loop calls for and this build doesn't yet automate.
+- **The cross-version "material drift" test compares a candidate's answers against one representative text from the baseline**, not baseline's full response distribution — a deliberate reuse of this repo's existing bidirectional-entailment primitive rather than a new two-sample distributional test, but it means the semantic-drift signal is somewhat more brittle than the score-axis signal, especially at low repeat counts. The harness-validation controls (unperturbed batch expected to stay quiet, corrupted batch expected to be flagged) exist specifically to surface when this brittleness matters on a given run — read them before trusting the sweep's own flags at face value.
+- **No retrieval-corpus or tool-response pinning implemented** — the `frozen_context` idea in Data & Fixtures above doesn't apply to this scenario's actual target (a fixed knowledge-base document embedded in the golden-set fixture, not a live retrieval call), so nothing needed freezing beyond the fixture itself, which was already static. Would matter if this scenario is later pointed at a target with real external retrieval or tool calls in the loop.
+- **Structured-field diffs and refusal-rate shift** (both named in the general Drift Scoring step above) aren't separately tracked — this run's two axes (deterministic score, semantic entailment) cover the golden set's short-answer format; a target with structured output or a meaningful refusal path would need its own scoring axis added.
