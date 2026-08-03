@@ -733,7 +733,13 @@ def build_report(
             "Target type": "LLM-powered system — the same RAG assistant (system-prompt mandate + knowledge-base document) Intended Performance tests, run across a version lineage instead of a single pinned snapshot",
             "LLM Provider": GENERIC_PROVIDER_NAME,
             "Version lineage": f"{len(sequence)} live dated snapshot(s) of the same model family, oldest-first" + (f" + 1 floating alias" if floating_entry else ""),
-            "Judge model": GENERIC_JUDGE_MODEL_NAME if os.environ.get("JUDGE_MODEL") else "<falls back to target model>",
+            "Judge model": (
+                f"{GENERIC_JUDGE_MODEL_NAME} — a separate, fixed deployment held constant across every "
+                "comparison below; not one of, and independent of, the versions in the lineage above "
+                "(the generic display name coincidentally matching one of this scenario's own version "
+                "labels is just that — a coincidence of the shared generic placeholder, not a relationship)"
+                if os.environ.get("JUDGE_MODEL") else "<falls back to target model>"
+            ),
             "Generation config": "temperature omitted, max_completion_tokens token parameter (reasoning-family default; per-snapshot fallback available, unused this run)",
             "Repeats per version": str(N_REPEATS),
         },

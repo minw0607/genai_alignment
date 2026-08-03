@@ -8,6 +8,16 @@
 
 **A concrete finding from building it, not a hypothetical:** the version lineage originally planned spanned 6 dated GPT-5.x snapshots across ~8 months. A pre-build connectivity check against every candidate found that the 4 oldest now return HTTP 410 ("deployment retired") on this deployment — confirmed via live calls, not assumed. Only 2 of the 6 survived to be testable. That's kept as documented history, not silently dropped: **a version lineage this scenario has to plan around a vendor retiring older pinned snapshots is itself evidence for the risk this scenario tests**, and directly validates this doc's own "test the control, not the calendar" argument below — waiting for drift to show up isn't the only failure mode; losing access to the baseline you'd compare against is another.
 
+**What's actually being compared, spelled out plainly** (this wasn't obvious enough from the notebook's table alone on first read):
+
+| Label | What it is | Compared against |
+|---|---|---|
+| `v1` | Oldest entry in `DRIFT_MODEL_SEQUENCE` — a real, vendor-dated snapshot | — (this *is* the baseline) |
+| `v2` | Newest entry in `DRIFT_MODEL_SEQUENCE` — a real, vendor-dated snapshot | `v1` — "did behavior change between these two dated snapshots?" |
+| `floating` | The value in `DRIFT_FLOATING_MODEL` — a live, undated, auto-updating alias, not a fixed snapshot | `v2` (the *newest* pinned point, not `v1`) — "has today's live alias already diverged from what's currently pinned?" |
+
+Only 3 things are ever compared, not a long timeline: `v2` vs. `v1`, and `floating` vs. `v2`. A **3rd pinned snapshot isn't just unbuilt — none exists to test against right now**: this model family's next version has no dated release yet, only undated `-latest` aliases (of which `floating` uses exactly one). That's why the third data point plays a different *role* (a floating comparison against the most recent pinned version) rather than being a 3rd equivalent pinned version in the lineage.
+
 ---
 
 ## Risk, Goal, and the Audit Question
