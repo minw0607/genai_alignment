@@ -690,10 +690,22 @@ def plot_control_validation(unchanged_drift: pd.DataFrame, corrupted_drift: pd.D
 
 # ---------------------------------------------------------------- Report
 
+def _numeric_answer_task_ids(golden_set: pd.DataFrame) -> set[str]:
+    """Tasks whose expected answer contains a digit — the only ones
+    INJECTED_DRIFT_SYSTEM_SUFFIX's "double every numeric value" corruption
+    can actually affect. A yes/no expected answer (e.g. "No", "Yes") has
+    nothing numeric to double, so it structurally can't show corruption
+    under this specific pattern — that's a limitation of this one
+    corruption design, not a detection miss, and the detection-power
+    control's real ceiling is this subset, not all 10 tasks."""
+    return set(golden_set.loc[golden_set["expected_output"].astype(str).str.contains(r"\d", regex=True), "task_id"])
+
+
 def _build_observations(
     sweep_drift: pd.DataFrame, floating_drift: pd.DataFrame | None, unchanged_drift: pd.DataFrame,
     corrupted_drift: pd.DataFrame, prompt_drift: pd.DataFrame,
     public_sweep_drift: pd.DataFrame | None = None, public_floating_drift: pd.DataFrame | None = None,
+    golden_set: pd.DataFrame | None = None,
 ) -> list[str]:
     observations = []
 
@@ -728,15 +740,33 @@ def _build_observations(
 
     n_unchanged_flagged = int(unchanged_drift["material_drift"].sum())
     n_corrupted_flagged = int(corrupted_drift["material_drift"].sum())
+    if golden_set is not None:
+        numeric_ids = _numeric_answer_task_ids(golden_set)
+        n_numeric = len(numeric_ids)
+        n_corrupted_numeric_flagged = int(
+            corrupted_drift[corrupted_drift["task_id"].isin(numeric_ids)]["material_drift"].sum()
+        )
+        detection_expectation = (
+            f"expected near {n_numeric} (its real ceiling, not {len(corrupted_drift)}) — the corruption "
+            "only doubles numeric values, so the "
+            f"{len(corrupted_drift) - n_numeric} task(s) with a plain yes/no expected answer have nothing "
+            "numeric to corrupt and can't show this specific pattern regardless of how well the pipeline "
+            "works"
+        )
+        detection_landed = n_unchanged_flagged == 0 and n_corrupted_numeric_flagged == n_numeric
+        detection_summary = f"flagged {n_corrupted_flagged} of {len(corrupted_drift)} tasks overall, {n_corrupted_numeric_flagged} of the {n_numeric} numeric-answer tasks it could actually affect"
+    else:
+        detection_expectation = "expected near all"
+        detection_landed = n_unchanged_flagged == 0 and n_corrupted_flagged == len(corrupted_drift)
+        detection_summary = f"flagged {n_corrupted_flagged} of {len(corrupted_drift)}"
     observations.append(
         f"Control validation: the unperturbed second batch of the same baseline snapshot flagged "
         f"{n_unchanged_flagged} of {len(unchanged_drift)} tasks as material drift (expected near 0 — "
-        "this is the harness's false-positive check), while the deliberately corrupted system prompt "
-        f"flagged {n_corrupted_flagged} of {len(corrupted_drift)} (expected near all — this is the "
-        "harness's detection-power check). " + (
+        f"this is the harness's false-positive check), while the deliberately corrupted system prompt "
+        f"{detection_summary} ({detection_expectation} — this is the harness's detection-power check). " + (
             "Both landed where expected — the harness has been shown to both detect a real change and "
             "stay quiet on a non-change, not just one or the other."
-            if n_unchanged_flagged == 0 and n_corrupted_flagged == len(corrupted_drift)
+            if detection_landed
             else "Read the per-task breakdown before trusting the sweep's own material_drift flags at "
             "face value — the control didn't land exactly where expected, which is a caveat on this "
             "run's drift-scoring sensitivity, not just a footnote."
@@ -831,12 +861,20 @@ def build_report(
     public_sweep_drift: pd.DataFrame | None = None,
     public_floating_drift: pd.DataFrame | None = None,
     public_noise_floor: pd.DataFrame | None = None,
+    golden_set: pd.DataFrame | None = None,
 ) -> ScenarioReport:
     n_material = int(sweep_drift["material_drift"].sum())
     n_unchanged_flagged = int(unchanged_drift["material_drift"].sum())
     n_corrupted_flagged = int(corrupted_drift["material_drift"].sum())
     n_prompt_material = int(prompt_drift["material_drift"].sum())
-    harness_validated = n_unchanged_flagged == 0 and n_corrupted_flagged == len(corrupted_drift)
+    if golden_set is not None:
+        _numeric_ids = _numeric_answer_task_ids(golden_set)
+        _n_corrupted_numeric_flagged = int(
+            corrupted_drift[corrupted_drift["task_id"].isin(_numeric_ids)]["material_drift"].sum()
+        )
+        harness_validated = n_unchanged_flagged == 0 and _n_corrupted_numeric_flagged == len(_numeric_ids)
+    else:
+        harness_validated = n_unchanged_flagged == 0 and n_corrupted_flagged == len(corrupted_drift)
 
     executive_summary = (
         f"This run tested whether the exact same HR/IT RAG assistant Intended Performance scores for "
@@ -960,7 +998,13 @@ def build_report(
         key_metrics=[
             Metric(value=f"{n_material}/{len(sweep_drift)}", label="Tasks with material drift", sublabel="between live pinned versions"),
             Metric(value=str(N_RETIRED_SNAPSHOTS), label="Candidate snapshots already retired", sublabel="confirmed via HTTP 410, not assumed"),
-            Metric(value=f"{n_corrupted_flagged}/{len(corrupted_drift)}", label="Injected-corruption control: flagged", sublabel="expected: all"),
+            Metric(
+                value=f"{n_corrupted_flagged}/{len(corrupted_drift)}", label="Injected-corruption control: flagged",
+                sublabel=(
+                    f"expected ≈{len(_numeric_answer_task_ids(golden_set))} — only numeric-answer tasks can show this corruption"
+                    if golden_set is not None else "expected: near all"
+                ),
+            ),
             Metric(value=f"{n_unchanged_flagged}/{len(unchanged_drift)}", label="Unperturbed control: flagged", sublabel="expected: none"),
             Metric(value=f"{n_prompt_material}/{len(prompt_drift)}", label="Tasks drifted from prompt edit alone", sublabel="same model, realistic (non-adversarial) rewrite"),
         ] + ([
@@ -982,7 +1026,7 @@ def build_report(
         executive_summary=executive_summary,
         observations=_build_observations(
             sweep_drift, floating_drift, unchanged_drift, corrupted_drift, prompt_drift,
-            public_sweep_drift, public_floating_drift,
+            public_sweep_drift, public_floating_drift, golden_set,
         ),
         high_risk_cases=_high_risk_cases(sweep_drift, floating_drift, prompt_drift),
         next_steps=[

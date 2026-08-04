@@ -116,6 +116,31 @@ That last point matters for `genai_alignment` specifically: the harness runs *in
 
 The golden set reuses the same task set as [intended performance](../README.md#scenario-library) and [consistency & reliability](../README.md#scenario-library) — no new prompt content is authored for this scenario. What's new is **versioning and environment-pinning**: the prompts alone aren't sufficient fixtures here, because a drift scenario has to rule out "the retrieval corpus changed" or "the tool's mock response changed" before attributing a diff to the agent itself. Practically, this means the fixture schema (see the [data-strategy discussion](../README.md#capabilities)) needs a `frozen_context` field per case — retrieval snapshot ID, tool-response fixtures, reference data version — alongside the prompt and expected-behavior fields already planned.
 
+## Sample Results
+
+Full report: [`docs/samples/drift_detection_report.html`](samples/drift_detection_report.html) (open in a browser — GitHub shows raw HTML source, not the rendered page). Same audit-style template every scenario in this repo renders through. Your own configured LLM provider and model (see [.env.example](../.env.example)), judged by an independent deployment per your own `JUDGE_MODEL`:
+
+| Track | Result | Headline finding |
+|---|---|---|
+| Version sweep (v1 → v2, 10 HR/IT tasks) | **4/10 material drift** | Real behavior moved between two dated snapshots ~7 weeks apart |
+| Floating alias vs. v2 (10 HR/IT tasks) | **5/10 material drift** | The live alias already differs from the currently-pinned snapshot, today |
+| Harness validation — unperturbed control | **0/10 flagged** | False-positive rate is now zero (was 3/10, then 1/10, across two rounds of fixing the material-drift test) |
+| Harness validation — injected corruption | **5/10 flagged, 2/3 of the tasks it could actually affect** | The corruption only doubles numeric values; 7 of 10 tasks have plain yes/no answers with nothing numeric to corrupt — see below |
+| Prompt drift (same model, realistic edit) | **7/10 material drift** | The largest driver of any track — an ordinary, non-adversarial prompt rewrite moved more tasks than 7 weeks of real model updates did |
+| Public-benchmark supplement (30 generic tasks, same v1 → v2) | **5/30 material drift** | Corroborates the HR/IT track's own direction, without use-case grounding |
+
+![Version-lineage trajectory — correctness and internal consistency across the pinned v1/v2 snapshots and the floating alias](samples/images/drift_detection_00_version_lineage_trajectory.png)
+
+![Harness validation — tasks flagged material drift for the unperturbed control (expect quiet) vs. the injected-corruption control (expect flagged)](samples/images/drift_detection_01_harness_validation.png)
+
+**The harness validation controls now land close to ideal, and the one shortfall has a clean explanation, not a shrug.** The false-positive rate is exactly 0/10 after two rounds of fixing the underlying statistical test (see Methodology above) — a real, measured improvement, not an assumption. The detection-power control's raw 5/10 looks weaker than an earlier pre-fix run's 9/10, but it isn't a regression: `INJECTED_DRIFT_SYSTEM_SUFFIX` only doubles *numeric* values, and only 3 of the 10 golden-set tasks have a numeric expected answer at all (the other 7 are plain yes/no). Of those 3 numeric tasks, 2 were caught; the one miss (`ip-01`) has its own explanation — its baseline wasn't perfectly self-consistent to begin with (60% self-match rate), so a full flip under corruption is statistically less surprising against an already-noisy baseline than it would be against a rock-solid one. The report's own text now states this ceiling explicitly rather than the earlier, misleading "expected near all."
+
+**Real drift showed up on every axis tested this run, but the score axis and the semantic axis told different stories.** For the version-sweep and floating-alias tracks, every `material_drift` flag was carried by the *score* axis — `material_semantic_drift` was `False` on all 20 rows across both tracks. Read plainly: the model's answers still meant roughly the same thing version to version, but scored differently — the same "verbose or differently-phrased answer, under-credited by a lexical metric" pattern [Intended Performance](intended_performance.md) and [Consistency & Reliability](consistency_reliability.md) already documented for this exact golden set, now showing up as a third scenario's finding rather than a one-off. The prompt-drift track was different: 3 of its 7 flagged tasks broke on the *semantic* axis too (`ip-05`, `ip-06`, `ip-09`), meaning the realistic prompt edit changed some answers' actual substance, not just their score — a materially different, more concerning kind of finding than the version-sweep's mostly-score-only pattern.
+
+**Prompt drift, not the model version bump, was this run's biggest driver of change.** 7 of 10 tasks moved under a prompt edit designed to look like an ordinary, well-intentioned improvement (source citation, explicit uncertainty, a reordered clause) — more than the real 7-week model-version gap (4/10) or the floating alias (5/10). This is the concrete evidence behind this scenario's own design argument: comparing model snapshots alone would have missed the largest behavioral change this run actually found.
+
+**The public-benchmark supplement corroborates the HR/IT finding's direction** (5/30 material drift between the same two pinned versions) without being able to say anything about whether the system stays in scope of its HR/IT mandate — it has no system-prompt support at all, so it's read here purely as extra evidence that "the model changed," not as its own governance finding.
+
 ## Mapping back to the general pipeline
 
 | Drift-specific step | General six-stage pipeline stage |
