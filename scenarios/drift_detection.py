@@ -79,6 +79,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from genai_capability_bench.clients.factory import create_client
 from genai_capability_bench.core.schemas import ModelSpec
+from genai_capability_bench.metrics.registry import evaluate_reference_metrics
 
 from reporting.artifacts import Artifact
 from reporting.display import GENERIC_JUDGE_MODEL_NAME, GENERIC_PROVIDER_NAME
@@ -86,6 +87,7 @@ from reporting.html_report import ChartImage, DataSection, ExtraSection, Metric,
 from reporting.repeat_run import (
     add_semantic_consistency,
     add_wilson_ci,
+    benjamini_hochberg,
     bidirectional_entailment,
     combine_repeats,
     repeat_runs,
@@ -252,6 +254,87 @@ def run_floating_check(golden_set: pd.DataFrame, floating_entry: dict, n: int = 
     return combined
 
 
+PUBLIC_BENCHMARK_PATH = "scenarios/fixtures/public_benchmark_sample.jsonl"
+
+
+def load_public_benchmark_sample() -> pd.DataFrame:
+    """A second, generic dataset — for the model-version axis only (not
+    prompt drift or harness validation, which are inherently about *this*
+    system's own prompt). The same MMLU/TriviaQA/ARC sample Consistency &
+    Reliability already reuses, added here for the same reason it kept that
+    dataset alongside its own use-case-grounded track rather than dropping
+    one for the other: 10 HR/IT tasks gives thin statistical power for the
+    narrower question "did the model itself change," and a broader,
+    non-use-case-grounded supplement adds power for exactly that question
+    without pretending it's evidence about the HR/IT mandate specifically —
+    the HR/IT track stays primary for that. No new dataset authored here."""
+    return pd.read_json(PUBLIC_BENCHMARK_PATH, lines=True)
+
+
+def run_public_benchmark(sample: pd.DataFrame, target_client) -> pd.DataFrame:
+    """No system prompt — this dataset's own generic adapter has never had
+    one (see scenarios/intended_performance.py's module docstring for why
+    that track was retired there for correctness testing); a bare
+    closed-book call is exactly what this supplementary track needs, since
+    it's testing raw model behavior, not a simulated deployed system."""
+    records = []
+    total = len(sample)
+    for i, (_, row) in enumerate(sample.iterrows()):
+        response = target_client.generate(row["input_text"])
+        records.append({**row.to_dict(), "actual_output": response.text})
+        print(f"[{i + 1}/{total}] {row['task_id']} done")
+    return pd.DataFrame(records)
+
+
+def score_public_benchmark(results: pd.DataFrame) -> pd.DataFrame:
+    """Each row's own metadata.scoring_profile decides the scoring formula
+    (multiple_choice or short_answer_qa in this sample) — read per row
+    rather than assumed uniform, since the fixture mixes both."""
+    scored = []
+    for _, row in results.iterrows():
+        profile = row["metadata"].get("scoring_profile", "short_answer_qa")
+        metrics = evaluate_reference_metrics(row["actual_output"] or "", row["references"], profile)
+        score = float(metrics["primary_score"])
+        scored.append({**row.to_dict(), "score": round(score, 3), "passed": score >= PASS_THRESHOLD})
+    return pd.DataFrame(scored)
+
+
+def run_public_benchmark_sweep(sample: pd.DataFrame, sequence: list[dict], n: int = N_REPEATS) -> pd.DataFrame:
+    """Same structure as run_version_sweep, against the public-benchmark
+    sample instead of the HR/IT golden set — kept as a separate function
+    rather than a branch inside run_version_sweep, since the two datasets
+    need genuinely different run mechanics (system-prompt-based vs. bare
+    closed-book call), not just a different input file."""
+    frames = []
+    for entry in sequence:
+        client = build_client(entry["deployment"])
+
+        def _run_once(c=client) -> pd.DataFrame:
+            return score_public_benchmark(run_public_benchmark(sample, c))
+
+        runs = repeat_runs(_run_once, n, label=entry["label"])
+        combined = combine_repeats(runs)
+        combined["version_label"] = entry["label"]
+        combined["version_seq"] = entry["seq"]
+        combined["version_date"] = entry["date"].isoformat() if entry["date"] else None
+        frames.append(combined)
+    return pd.concat(frames, ignore_index=True)
+
+
+def run_public_benchmark_floating_check(sample: pd.DataFrame, floating_entry: dict, n: int = N_REPEATS) -> pd.DataFrame:
+    client = build_client(floating_entry["deployment"])
+
+    def _run_once() -> pd.DataFrame:
+        return score_public_benchmark(run_public_benchmark(sample, client))
+
+    runs = repeat_runs(_run_once, n, label=floating_entry["label"])
+    combined = combine_repeats(runs)
+    combined["version_label"] = floating_entry["label"]
+    combined["version_seq"] = floating_entry["seq"]
+    combined["version_date"] = None
+    return combined
+
+
 def run_control_validation(golden_set: pd.DataFrame, baseline_deployment: str, n: int = N_REPEATS) -> pd.DataFrame:
     """The doc's "test the control, not the calendar" requirement: prove the
     harness both flags a real change and stays quiet on a non-change, using
@@ -364,23 +447,28 @@ def cross_version_match_rate(baseline_texts: list[str], candidate_texts: list[st
     return matches / len(candidate_texts), matches, len(candidate_texts)
 
 
-def _two_sample_mean_material(mean_a: float, std_a: float, n_a: int, mean_b: float, std_b: float, n_b: int, z_threshold: float = 1.96) -> bool:
-    """Welch-style two-sample z-test on a continuous mean (the score axis).
+def _two_sample_mean_pvalue(mean_a: float, std_a: float, n_a: int, mean_b: float, std_b: float, n_b: int) -> float:
+    """Two-sided p-value for a Welch-style two-sample z-test on a continuous
+    mean (the score axis).
 
     Replaces an earlier pass-rate-only version of this check: comparing
     binary pass/fail rate is blind to real score movement that never crosses
     the 0.7 threshold in either direction (e.g. 0.62 -> 0.36 is a large,
     real shift but reads as "0/5 passing -> 0/5 passing" either way). Using
     the continuous score directly, with both groups' own variance in the
-    standard error, catches that movement."""
+    standard error, catches that movement. Returns a raw p-value rather than
+    a threshold decision — BH correction across every task in one drift
+    table happens once, in score_drift_vs_baseline, not per row here."""
     se = math.sqrt((std_a**2) / max(n_a, 1) + (std_b**2) / max(n_b, 1))
     if se == 0:
-        return mean_a != mean_b
-    return abs(mean_a - mean_b) / se > z_threshold
+        return 0.0 if mean_a != mean_b else 1.0
+    z = abs(mean_a - mean_b) / se
+    return math.erfc(z / math.sqrt(2))
 
 
-def _two_proportion_material(p_a: float, n_a: int, p_b: float, n_b: int, z_threshold: float = 1.96) -> bool:
-    """Two-proportion z-test (the semantic axis's match rate).
+def _two_proportion_pvalue(p_a: float, n_a: int, p_b: float, n_b: int) -> float:
+    """Two-sided p-value for a two-proportion z-test (the semantic axis's
+    match rate).
 
     Replaces an earlier version that checked whether a Wilson CI built from
     the *candidate's* own repeats excluded the *baseline's* bare point
@@ -391,14 +479,16 @@ def _two_proportion_material(p_a: float, n_a: int, p_b: float, n_b: int, z_thres
     a single non-matching sample out of 5 — ordinary LLM-judge/paraphrase
     noise, not real drift — was enough to flag every time. A two-proportion
     test accounts for *both* groups' sample sizes, so a single disagreement
-    against a small n on both sides reads as noise, not a signal."""
+    against a small n on both sides reads as noise, not a signal. Returns a
+    raw p-value — see _two_sample_mean_pvalue for why."""
     if n_a == 0 or n_b == 0:
-        return False
+        return 1.0
     p_pool = (p_a * n_a + p_b * n_b) / (n_a + n_b)
     se = math.sqrt(p_pool * (1 - p_pool) * (1 / n_a + 1 / n_b))
     if se == 0:
-        return p_a != p_b
-    return abs(p_a - p_b) / se > z_threshold
+        return 0.0 if p_a != p_b else 1.0
+    z = abs(p_a - p_b) / se
+    return math.erfc(z / math.sqrt(2))
 
 
 def score_drift_vs_baseline(
@@ -406,15 +496,21 @@ def score_drift_vs_baseline(
     baseline_results: pd.DataFrame,
     baseline_var: pd.DataFrame,
     judge_client,
+    alpha: float = 0.05,
 ) -> pd.DataFrame:
     """Per-task drift row for one candidate version against the baseline
-    version. "Material" on either axis means a two-sample test (see
-    _two_sample_mean_material / _two_proportion_material) rejects "these two
-    groups are the same," accounting for *both* groups' own sampling
-    variance — not a raw diff, and not baseline treated as a fixed, certain
-    reference point, following the same tolerance-band-not-eyeballed
-    principle add_reliability_significance already applies elsewhere in
-    this repo, extended to a proper two-sample comparison."""
+    version. Each axis's per-task p-value comes from a two-sample test (see
+    _two_sample_mean_pvalue / _two_proportion_pvalue), accounting for *both*
+    groups' own sampling variance — not a raw diff, and not baseline treated
+    as a fixed, certain reference point. "Material" on either axis is decided
+    only after **Benjamini-Hochberg correction across every task in this
+    table** (`benjamini_hochberg`, reporting/repeat_run.py) — testing 10
+    tasks at once at an uncorrected alpha=0.05 produces ~0.5 false positives
+    by chance alone, exactly the same multiple-comparison problem
+    Consistency & Reliability's own per-task significance test
+    (`add_reliability_significance`) already corrects for elsewhere in this
+    repo, extended here to a two-sample comparison instead of a one-sample
+    binomial test."""
     rows = []
     for task_id, cand_group in candidate_results.groupby("task_id"):
         base_group = baseline_results[baseline_results["task_id"] == task_id]
@@ -422,9 +518,12 @@ def score_drift_vs_baseline(
 
         cand_scores = cand_group["score"]
         cand_n = len(cand_group)
-        material_score_drift = _two_sample_mean_material(
+        # pandas' .std() is NaN (not 0.0) for n<2 — `x or 0.0` doesn't catch
+        # that (NaN is truthy in Python), so it has to be checked explicitly.
+        cand_std = float(cand_scores.std()) if cand_n > 1 and pd.notna(cand_scores.std()) else 0.0
+        score_p_value = _two_sample_mean_pvalue(
             float(base_var_row["avg_score"]), float(base_var_row["score_std"]), int(base_var_row["n_runs"]),
-            float(cand_scores.mean()), float(cand_scores.std() or 0.0), cand_n,
+            float(cand_scores.mean()), cand_std, cand_n,
         )
 
         baseline_texts = list(base_group["actual_output"])
@@ -434,9 +533,7 @@ def score_drift_vs_baseline(
         match_rate, n_matches, n_candidates = cross_version_match_rate(
             baseline_texts, list(cand_group["actual_output"]), judge_client,
         )
-        material_semantic_drift = _two_proportion_material(
-            base_self_match_rate, base_self_n, match_rate, n_candidates,
-        )
+        semantic_p_value = _two_proportion_pvalue(base_self_match_rate, base_self_n, match_rate, n_candidates)
 
         rows.append({
             "task_id": task_id,
@@ -445,14 +542,17 @@ def score_drift_vs_baseline(
             "score_delta": round(float(cand_scores.mean() - base_var_row["avg_score"]), 3),
             "candidate_pass_rate": round(float(cand_group["passed"].mean()), 3),
             "baseline_pass_rate": round(float(base_var_row["pass_rate"]), 3),
-            "material_score_drift": material_score_drift,
+            "score_p_value": round(score_p_value, 4),
             "semantic_match_rate": round(match_rate, 3),
             "baseline_self_match_rate": round(base_self_match_rate, 3),
             "baseline_semantic_consistency": round(float(base_var_row["semantic_consistency"]), 3),
-            "material_semantic_drift": material_semantic_drift,
-            "material_drift": material_score_drift or material_semantic_drift,
+            "semantic_p_value": round(semantic_p_value, 4),
         })
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    result["material_score_drift"] = benjamini_hochberg(list(result["score_p_value"]), alpha=alpha)
+    result["material_semantic_drift"] = benjamini_hochberg(list(result["semantic_p_value"]), alpha=alpha)
+    result["material_drift"] = result["material_score_drift"] | result["material_semantic_drift"]
+    return result
 
 
 def build_sweep_drift_table(sweep_results: pd.DataFrame, noise_floor: pd.DataFrame, judge_client) -> pd.DataFrame:
@@ -488,23 +588,43 @@ def build_reference_drift_table(
 
 # ---------------------------------------------------------------- Charts
 
-def plot_trajectory(noise_floor: pd.DataFrame) -> ChartImage:
+def plot_trajectory(noise_floor: pd.DataFrame, floating_noise_floor: pd.DataFrame | None = None) -> ChartImage:
+    """Left/right: correctness and internal consistency across the *dated,
+    pinned* lineage — a real x-axis position for each point, since each has
+    a real date. If `floating_noise_floor` is given, it's added as one more
+    point after the pinned lineage, visually distinguished (different
+    marker/color, dashed connector, "(undated)" in its label) rather than
+    plotted as if it had a real position on the same dated timeline — it
+    doesn't; it's a live value as of whenever this run happened, not a
+    fixed snapshot date, and conflating the two would misrepresent it."""
     by_version = noise_floor.groupby(["version_seq", "version_label"], as_index=False).agg(
         avg_score=("avg_score", "mean"), semantic_consistency=("semantic_consistency", "mean"),
     ).sort_values("version_seq")
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
-    axes[0].plot(by_version["version_label"], by_version["avg_score"], marker="o", color=PALETTE["neutral"])
-    axes[0].set_ylim(0, 1.05)
-    axes[0].set_ylabel("avg score")
-    axes[0].set_title("Correctness across the version lineage")
-    axes[0].tick_params(axis="x", rotation=20)
+    labels = list(by_version["version_label"])
+    scores = list(by_version["avg_score"])
+    consistencies = list(by_version["semantic_consistency"])
+    floating_label = None
+    if floating_noise_floor is not None and len(floating_noise_floor):
+        floating_label = str(floating_noise_floor["version_label"].iloc[0]) + " (undated)"
+        labels.append(floating_label)
+        scores.append(float(floating_noise_floor["avg_score"].mean()))
+        consistencies.append(float(floating_noise_floor["semantic_consistency"].mean()))
 
-    axes[1].plot(by_version["version_label"], by_version["semantic_consistency"], marker="o", color=PALETTE["neutral"])
-    axes[1].set_ylim(0, 1.05)
-    axes[1].set_ylabel("avg internal semantic consistency")
-    axes[1].set_title("Each version's own repeat-to-repeat noise floor")
-    axes[1].tick_params(axis="x", rotation=20)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    for ax, values, ylabel, title in [
+        (axes[0], scores, "avg score", "Correctness across the version lineage"),
+        (axes[1], consistencies, "avg internal semantic consistency", "Each version's own repeat-to-repeat noise floor"),
+    ]:
+        n_pinned = len(by_version)
+        ax.plot(labels[:n_pinned], values[:n_pinned], marker="o", color=PALETTE["neutral"], label="pinned (dated)")
+        if floating_label:
+            ax.plot(labels[n_pinned - 1:], values[n_pinned - 1:], marker="D", linestyle="--", color=PALETTE["floating"], label="floating (undated)")
+            ax.legend(fontsize=8, loc="lower right")
+        ax.set_ylim(0, 1.05)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.tick_params(axis="x", rotation=20)
 
     plt.tight_layout()
     chart = ChartImage(
@@ -512,7 +632,13 @@ def plot_trajectory(noise_floor: pd.DataFrame) -> ChartImage:
         caption=(
             "Left: average correctness score per version. Right: how internally consistent each "
             "version is with its own repeats (the noise floor drift is measured against) — a version "
-            "with low internal consistency makes any single-run comparison against it unreliable."
+            "with low internal consistency makes any single-run comparison against it unreliable. "
+            + (
+                "The dashed diamond point is the floating alias — plotted after the pinned lineage but "
+                "explicitly marked undated: it has no fixed snapshot date, so its x-axis position is "
+                "sequence, not calendar time."
+                if floating_label else ""
+            )
         ),
         base64_png=fig_to_base64(fig), section="results",
     )
@@ -567,6 +693,7 @@ def plot_control_validation(unchanged_drift: pd.DataFrame, corrupted_drift: pd.D
 def _build_observations(
     sweep_drift: pd.DataFrame, floating_drift: pd.DataFrame | None, unchanged_drift: pd.DataFrame,
     corrupted_drift: pd.DataFrame, prompt_drift: pd.DataFrame,
+    public_sweep_drift: pd.DataFrame | None = None, public_floating_drift: pd.DataFrame | None = None,
 ) -> list[str]:
     observations = []
 
@@ -631,6 +758,28 @@ def _build_observations(
         )
     )
 
+    if public_sweep_drift is not None:
+        n_public_material = int(public_sweep_drift["material_drift"].sum())
+        agree_or_not = (
+            "consistent with" if (n_public_material > 0) == (int(sweep_drift["material_drift"].sum()) > 0)
+            else "in tension with"
+        )
+        observations.append(
+            f"Public-benchmark supplement (generic MMLU/TriviaQA/ARC sample, {len(public_sweep_drift)} tasks, "
+            "not use-case-grounded — added purely for statistical power on the model-version axis): "
+            f"{n_public_material} of {len(public_sweep_drift)} tasks showed material drift between the same "
+            f"two live pinned versions, {agree_or_not} the HR/IT track's own finding. This dataset never "
+            "tests whether the system stays in scope of its HR/IT mandate — only whether raw model "
+            "behavior moved — so treat it as corroborating evidence on 'did the model change,' not as its "
+            "own governance finding."
+        )
+        if public_floating_drift is not None:
+            n_public_float_material = int(public_floating_drift["material_drift"].sum())
+            observations.append(
+                f"Public-benchmark supplement, floating alias vs. last pinned snapshot: "
+                f"{n_public_float_material} of {len(public_floating_drift)} tasks flagged."
+            )
+
     return observations
 
 
@@ -679,6 +828,8 @@ def build_report(
     prompt_drift: pd.DataFrame,
     charts: list[ChartImage],
     artifacts_table: pd.DataFrame | None = None,
+    public_sweep_drift: pd.DataFrame | None = None,
+    public_floating_drift: pd.DataFrame | None = None,
 ) -> ScenarioReport:
     n_material = int(sweep_drift["material_drift"].sum())
     n_unchanged_flagged = int(unchanged_drift["material_drift"].sum())
@@ -763,7 +914,15 @@ def build_report(
             "stay quiet on a non-change, per the design doc's own stated bar. A fourth track holds the "
             "model fixed and varies only the system-prompt wording, between the current prompt and a "
             "realistic (non-adversarial) candidate edit — the same drift-scoring pipeline, testing a "
-            "different, arguably more common real-world drift trigger than a model version bump."
+            "different, arguably more common real-world drift trigger than a model version bump. Every "
+            "material-drift flag above is decided by Benjamini-Hochberg correction across all tasks in "
+            "its own table, not a raw per-task alpha=0.05 cutoff — the same multiple-comparison "
+            "correction Consistency & Reliability's own significance test already applies elsewhere in "
+            "this repo. A generic public-benchmark sample (MMLU/TriviaQA/ARC, reused unchanged from "
+            "Consistency & Reliability) supplements the model-version and floating-alias tracks only, "
+            "purely for statistical power on 'did the model change' — not use-case-grounded, and not "
+            "run through the prompt-drift or harness-validation tracks, which are inherently about this "
+            "system's own prompt."
         ),
         data_sections=[
             DataSection(
@@ -778,24 +937,46 @@ def build_report(
                 ),
                 description="No new prompt content authored for the golden set itself — see module docstring.",
             ),
-        ],
+        ] + ([
+            DataSection(
+                name="Public-benchmark supplement (MMLU/TriviaQA/ARC)",
+                layer="Reused, not new",
+                source="Same sample Consistency & Reliability reuses — generic, no system-prompt support",
+                size=(
+                    f"{len(public_sweep_drift['task_id'].unique()) if public_sweep_drift is not None else 0} tasks × "
+                    f"{N_REPEATS} repeats × ({len(sequence)} version(s)"
+                    + (" + 1 floating" if floating_entry else "") + ") calls"
+                ),
+                description="Model-version and floating-alias tracks only — adds statistical power, not use-case grounding.",
+            ),
+        ] if public_sweep_drift is not None else []),
         key_metrics=[
             Metric(value=f"{n_material}/{len(sweep_drift)}", label="Tasks with material drift", sublabel="between live pinned versions"),
             Metric(value=str(N_RETIRED_SNAPSHOTS), label="Candidate snapshots already retired", sublabel="confirmed via HTTP 410, not assumed"),
             Metric(value=f"{n_corrupted_flagged}/{len(corrupted_drift)}", label="Injected-corruption control: flagged", sublabel="expected: all"),
             Metric(value=f"{n_unchanged_flagged}/{len(unchanged_drift)}", label="Unperturbed control: flagged", sublabel="expected: none"),
             Metric(value=f"{n_prompt_material}/{len(prompt_drift)}", label="Tasks drifted from prompt edit alone", sublabel="same model, realistic (non-adversarial) rewrite"),
-        ],
+        ] + ([
+            Metric(
+                value=f"{int(public_sweep_drift['material_drift'].sum())}/{len(public_sweep_drift)}",
+                label="Public-benchmark: tasks with material drift", sublabel="same two versions, generic supplement",
+            ),
+        ] if public_sweep_drift is not None else []),
         results_tables=[
             ("Cross-version drift by task", sweep_drift),
         ] + ([("Floating-alias drift by task", floating_drift)] if floating_drift is not None else []) + [
             ("Control validation: unperturbed", unchanged_drift[["task_id", "candidate_avg_score", "material_drift"]].rename(columns={"candidate_avg_score": "avg_score"})),
             ("Control validation: injected corruption", corrupted_drift[["task_id", "candidate_avg_score", "material_drift"]].rename(columns={"candidate_avg_score": "avg_score"})),
             ("Prompt-drift by task", prompt_drift),
-        ],
+        ] + ([("Public-benchmark: cross-version drift by task", public_sweep_drift)] if public_sweep_drift is not None else []) + (
+            [("Public-benchmark: floating-alias drift by task", public_floating_drift)] if public_floating_drift is not None else []
+        ),
         charts=charts,
         executive_summary=executive_summary,
-        observations=_build_observations(sweep_drift, floating_drift, unchanged_drift, corrupted_drift, prompt_drift),
+        observations=_build_observations(
+            sweep_drift, floating_drift, unchanged_drift, corrupted_drift, prompt_drift,
+            public_sweep_drift, public_floating_drift,
+        ),
         high_risk_cases=_high_risk_cases(sweep_drift, floating_drift, prompt_drift),
         next_steps=[
             "Only 2 live dated snapshots survived retirement out of 6 originally candidate — request a "
@@ -826,6 +1007,9 @@ def save_artifacts(
     floating_results: pd.DataFrame | None, floating_drift: pd.DataFrame | None,
     control_results: pd.DataFrame, unchanged_drift: pd.DataFrame, corrupted_drift: pd.DataFrame,
     prompt_results: pd.DataFrame, prompt_drift: pd.DataFrame,
+    public_sweep_results: pd.DataFrame | None = None, public_noise_floor: pd.DataFrame | None = None,
+    public_sweep_drift: pd.DataFrame | None = None,
+    public_floating_results: pd.DataFrame | None = None, public_floating_drift: pd.DataFrame | None = None,
 ) -> dict[str, str]:
     out_dir = Path(OUTPUT_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -853,6 +1037,21 @@ def save_artifacts(
     if floating_drift is not None:
         floating_drift.to_csv(out_dir / "floating_drift.csv", index=False)
         paths["floating_drift"] = out_dir / "floating_drift.csv"
+    if public_sweep_results is not None:
+        public_sweep_results.to_csv(out_dir / "public_sweep_raw_results.csv", index=False)
+        paths["public_sweep_raw"] = out_dir / "public_sweep_raw_results.csv"
+    if public_noise_floor is not None:
+        public_noise_floor.to_csv(out_dir / "public_noise_floor.csv", index=False)
+        paths["public_noise_floor"] = out_dir / "public_noise_floor.csv"
+    if public_sweep_drift is not None:
+        public_sweep_drift.to_csv(out_dir / "public_sweep_drift.csv", index=False)
+        paths["public_sweep_drift"] = out_dir / "public_sweep_drift.csv"
+    if public_floating_results is not None:
+        public_floating_results.to_csv(out_dir / "public_floating_raw_results.csv", index=False)
+        paths["public_floating_raw"] = out_dir / "public_floating_raw_results.csv"
+    if public_floating_drift is not None:
+        public_floating_drift.to_csv(out_dir / "public_floating_drift.csv", index=False)
+        paths["public_floating_drift"] = out_dir / "public_floating_drift.csv"
     return {k: str(v) for k, v in paths.items()}
 
 
@@ -908,5 +1107,30 @@ def artifacts(saved_paths: dict[str, str]) -> list[Artifact]:
         items.append(Artifact(
             "Floating-alias drift table", saved_paths["floating_drift"],
             "Material-drift flags for the floating alias vs. the last pinned version.",
+        ))
+    if "public_sweep_raw" in saved_paths:
+        items.append(Artifact(
+            "Public-benchmark raw results (all versions, all repeats)", saved_paths["public_sweep_raw"],
+            "Generic MMLU/TriviaQA/ARC supplement — statistical power only, not use-case-grounded.",
+        ))
+    if "public_noise_floor" in saved_paths:
+        items.append(Artifact(
+            "Public-benchmark noise floor", saved_paths["public_noise_floor"],
+            "Same structure as the HR/IT noise floor, for the public-benchmark sample.",
+        ))
+    if "public_sweep_drift" in saved_paths:
+        items.append(Artifact(
+            "Public-benchmark cross-version drift by task", saved_paths["public_sweep_drift"],
+            "Same two live pinned versions as the HR/IT track — corroborating evidence, not a separate finding.",
+        ))
+    if "public_floating_raw" in saved_paths:
+        items.append(Artifact(
+            "Public-benchmark floating-alias raw results", saved_paths["public_floating_raw"],
+            "Public-benchmark sample against the floating alias vs. the last pinned snapshot.",
+        ))
+    if "public_floating_drift" in saved_paths:
+        items.append(Artifact(
+            "Public-benchmark floating-alias drift table", saved_paths["public_floating_drift"],
+            "Material-drift flags for the floating alias, public-benchmark sample.",
         ))
     return items
