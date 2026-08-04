@@ -830,6 +830,7 @@ def build_report(
     artifacts_table: pd.DataFrame | None = None,
     public_sweep_drift: pd.DataFrame | None = None,
     public_floating_drift: pd.DataFrame | None = None,
+    public_noise_floor: pd.DataFrame | None = None,
 ) -> ScenarioReport:
     n_material = int(sweep_drift["material_drift"].sum())
     n_unchanged_flagged = int(unchanged_drift["material_drift"].sum())
@@ -869,11 +870,17 @@ def build_report(
 
     extra_sections = [
         ExtraSection(
-            title="Noise floor by version",
+            title="Noise floor by version (HR/IT)",
             html=noise_floor[["version_label", "task_id", "avg_score", "score_std", "pass_rate", "semantic_consistency"]]
             .to_html(index=False, classes="report-table", border=0),
         ),
     ]
+    if public_noise_floor is not None:
+        extra_sections.append(ExtraSection(
+            title="Noise floor by version (public-benchmark supplement)",
+            html=public_noise_floor[["version_label", "task_id", "avg_score", "score_std", "pass_rate", "semantic_consistency"]]
+            .to_html(index=False, classes="report-table", border=0),
+        ))
 
     return ScenarioReport(
         scenario_name="Drift Detection",
