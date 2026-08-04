@@ -28,7 +28,7 @@ That is an *alignment* question, not a capability or attack question. It sits cl
 
 **This repo does not reimplement evaluation machinery that already exists.** It is a thin scenario-taxonomy, adapter, and reporting layer over a small ecosystem of sibling repos that already do the deep work — see [Scenario Library](#scenario-library). New work here is concentrated where a real gap exists: objective-drift, boundary/permission, drift-detection, fail-safe, autonomy/oversight-gating, and third-party/vendor-agent testing.
 
-Five scenarios are built end-to-end (notebook → design doc → sample report from a full run): [Intended Performance](docs/intended_performance.md), [Consistency & Reliability](docs/consistency_reliability.md), [Objective Alignment](docs/objective_alignment.md), [Adversarial Inputs](docs/adversarial_inputs.md), and [Drift Detection](docs/drift_detection.md). Each design doc carries its own notebook link, methodology, metrics, and sample results — see [Scenario Library](#scenario-library) below for the full list and build status. Four are partial builds, not finished scope, and say so in their own docs: Objective Alignment's [Limitations & Future Work](docs/objective_alignment.md#limitations--future-work) section (small hand-authored test sets, a modest proxy for true long-horizon drift, no agentic-RAG or ongoing-monitoring layer), Adversarial Inputs' [Limitations & Future Work](docs/adversarial_inputs.md#limitations--future-work) section (two of six considered banking use cases are built; only the prompt-injection workstream is tested; jailbreaking and adversarial NLP are still open), and Drift Detection's [Limitations & Future Work](docs/drift_detection.md#limitations--future-work) section (only 2 of 6 originally candidate model snapshots are still live — the other 4 were retired by the deployment before this scenario could test against them, itself a real finding about the risk this scenario tests — and only two drift axes, model version and prompt wording, are built; tool/API-response drift and retrieval-corpus drift are the natural next tracks).
+Five scenarios are built end-to-end (notebook → design doc → sample report from a full run): [Intended Performance](docs/intended_performance.md), [Consistency & Reliability](docs/consistency_reliability.md), [Objective Alignment](docs/objective_alignment.md), [Adversarial Inputs](docs/adversarial_inputs.md), and [Drift Detection](docs/drift_detection.md). A sixth, [Boundary / Permission](docs/boundary_permission.md), has its notebook, native tool-calling harness, and design doc built and validated end to end at small scale, but has not yet been run at full repeat count — it doesn't have a sample report or Sample Results section yet. Each design doc carries its own notebook link, methodology, metrics, and (once run) sample results — see [Scenario Library](#scenario-library) below for the full list and build status. Four are partial builds, not finished scope, and say so in their own docs: Objective Alignment's [Limitations & Future Work](docs/objective_alignment.md#limitations--future-work) section (small hand-authored test sets, a modest proxy for true long-horizon drift, no agentic-RAG or ongoing-monitoring layer), Adversarial Inputs' [Limitations & Future Work](docs/adversarial_inputs.md#limitations--future-work) section (two of six considered banking use cases are built; only the prompt-injection workstream is tested; jailbreaking and adversarial NLP are still open), and Drift Detection's [Limitations & Future Work](docs/drift_detection.md#limitations--future-work) section (only 2 of 6 originally candidate model snapshots are still live — the other 4 were retired by the deployment before this scenario could test against them, itself a real finding about the risk this scenario tests — and only two drift axes, model version and prompt wording, are built; tool/API-response drift and retrieval-corpus drift are the natural next tracks).
 
 <a id="contents"></a>
 
@@ -100,7 +100,7 @@ Testing whether an enterprise GenAI system is *aligned* draws on capability meas
 
 | Scenario | Risk if untested | What we test | Existing coverage | Treatment |
 |---|---|---|---|---|
-| Boundary / permission | Exceeds permissions, access, or scope of action | Does not act beyond granted authority or data access | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
+| [Boundary / permission](docs/boundary_permission.md) | Exceeds permissions, access, or scope of action | Does not act beyond granted authority or data access, tested on a tool-calling HR/IT agent with benign requests only — no attacker | Adjacent to agentic-attack work, but authorized-tool misuse ≠ attack | Native |
 | [Adversarial inputs](docs/adversarial_inputs.md) | Manipulated or unsafe behavior from conflicting / malicious input | Robustness to ambiguous, conflicting, adversarial inputs, via two banking use cases (retail chatbot, financial document review) | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — adversarial NLP, jailbreak, prompt injection | Adapter + native |
 | [Drift detection](docs/drift_detection.md) | Outputs change over time with no input change (model / tool updates) | Behavior stable absent input change; material change is gated | *none* — no before/after regression harness across model/tool versions | Native |
 | Fail-safe behavior | Errors, edge cases, or incomplete data cause uncontrolled outcomes | Safe handling of errors, edge cases, and degraded data | *none* — no error/edge-case chaos-injection harness | Native |
@@ -251,12 +251,13 @@ genai_alignment/
 │   └── rag_eval.py             # → rag_eval_framework
 │
 ├── native/                     # Purpose-built harnesses for uncovered scenarios
-│   ├── objective_alignment.py
-│   ├── boundary_permission.py
-│   ├── drift_detection.py
-│   ├── fail_safe.py
-│   ├── oversight_gating.py
-│   └── vendor_agents.py
+│   ├── tool_agent.py           # Built: function-calling loop + mock enterprise tool backend
+│   │                           #   (boundary/permission today; tool/MCP abuse and oversight
+│   │                           #    gating will reuse it). Per-scenario *logic* lives in
+│   │                           #    scenarios/ — native/ holds reusable mechanisms only.
+│   ├── fail_safe.py            # Planned
+│   ├── oversight_gating.py     # Planned
+│   └── vendor_agents.py        # Planned
 │
 ├── evidence/                   # Per-run artifact capture + tracing (gitignored data)
 ├── reporting/                  # Cross-scenario reporting — uniform, not per-scenario code
