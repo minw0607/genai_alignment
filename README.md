@@ -86,6 +86,77 @@ Scenarios are organized into three tiers, ordered from foundational behavior to 
 
 Each scenario gets its own design doc under `docs/` — Scope, Approach, Methodology, Data, and Sample Results once a scenario has been run — linked from the tables below as it's written. See [`docs/intended_performance.md`](docs/intended_performance.md) for the format a run scenario follows; [`docs/drift_detection.md`](docs/drift_detection.md) predates a build and follows the source design diagram's own shape (Risk/Goal/Audit Question) instead — it'll converge to the same template once that scenario is actually built.
 
+### Coverage map — where each scenario tests an agentic system
+
+An agentic system fails in different *places*, and each place needs a different test. This maps the scenario library onto the six surfaces where an agent can actually go wrong. **Solid teal = built and run end-to-end; dashed = designed, not yet built.** A few scenarios appear on more than one surface because they test more than one thing — Drift Detection's version axis probes the model while its prompt axis probes the instructions, and Consistency & Reliability's chatbot and agentic tracks sit on different surfaces for the same reason:
+
+```mermaid
+flowchart TB
+    classDef built fill:#2a9d8f,stroke:#1f7a6f,color:#ffffff
+    classDef planned fill:#ffffff,stroke:#adb5bd,color:#495057,stroke-dasharray:4 3
+
+    subgraph S1["1 · INPUT SURFACE — user message, retrieved context, tool results, documents"]
+        direction LR
+        A1["Adversarial inputs"]:::built
+        A2["Fail-safe behavior"]:::planned
+    end
+
+    subgraph S2["2 · INSTRUCTIONS &amp; POLICY — system prompt, mandate, authorization rules"]
+        direction LR
+        B1["Objective alignment<br/>mandate drift"]:::built
+        B2["Drift detection<br/>prompt axis"]:::built
+    end
+
+    subgraph S3["3 · THE MODEL ITSELF — one versioned snapshot"]
+        direction LR
+        C1["Intended performance"]:::built
+        C2["Consistency &amp; reliability<br/>chatbot track"]:::built
+        C3["Drift detection<br/>version axis"]:::built
+    end
+
+    subgraph S4["4 · REASONING LOOP — plan, act, observe: multi-step and stateful"]
+        direction LR
+        D1["Consistency &amp; reliability<br/>agentic track"]:::built
+        D2["Objective alignment<br/>mid-task pressure"]:::built
+    end
+
+    subgraph S5["5 · TOOL &amp; DATA ACCESS — read, write, destructive"]
+        direction LR
+        E1["Boundary / permission"]:::built
+        E2["Tool / MCP abuse"]:::planned
+        E3["Autonomy &amp; oversight gating"]:::planned
+        E4["Sensitive-data handling"]:::planned
+    end
+
+    subgraph S6["6 · HANDOFFS — sub-agents, vendor agents"]
+        direction LR
+        F1["Multi-agent orchestration"]:::planned
+        F2["Third-party / vendor agents"]:::planned
+    end
+
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6
+
+    style S1 fill:#f8f9fa,stroke:#264653,color:#264653
+    style S2 fill:#f8f9fa,stroke:#264653,color:#264653
+    style S3 fill:#f8f9fa,stroke:#264653,color:#264653
+    style S4 fill:#f8f9fa,stroke:#264653,color:#264653
+    style S5 fill:#fff4f0,stroke:#e76f51,color:#a03d21
+    style S6 fill:#fff4f0,stroke:#e76f51,color:#a03d21
+```
+
+**What the map says, including the uncomfortable part.** The model and its instructions are the best-covered surfaces — the six built scenarios test whether the system answers correctly, answers consistently, stays on mandate, resists hostile input, and stays stable as versions and prompts change. But coverage thins exactly where a system stops being a chatbot and starts being an *agent* (the two orange clusters above):
+
+| Surface | Built | Planned | Note |
+|---|---|---|---|
+| 1 · Input | 1 | 1 | Prompt injection covered; error/degraded-input handling is not |
+| 2 · Instructions & policy | 2 | 0 | Mandate drift and prompt drift both tested |
+| 3 · The model | 3 | 0 | Correctness, consistency, and version drift all tested |
+| 4 · Reasoning loop | 2 | 0 | Tested via the agentic tracks in scenarios 2 and 3 |
+| **5 · Tool & data access** | **1** | **3** | **The consequential surface — one of four scenarios built** |
+| **6 · Handoffs** | **0** | **2** | **Entirely untested** |
+
+Taking real actions and delegating to other agents are the two things that make an agentic system riskier than a chatbot, and they are this library's thinnest coverage: [Boundary / Permission](docs/boundary_permission.md) is the only built scenario touching the action surface, and nothing yet tests handoffs at all. That is the honest state of the roadmap, and it is why the Tier 3 scenarios below are ordered the way they are.
+
 Testing whether an enterprise GenAI system is *aligned* draws on capability measurement, adversarial red-teaming, and agent/RAG evaluation all at once — three things already built, separately, in sibling repos by the same author. Rather than duplicate that work, each scenario below is either an **adapter** onto an existing repo, or **native** work built specifically to close a gap none of them cover — the last two columns say which. Adapters call into the sibling repos as installed packages or their published APIs; they never copy pipeline internals. [`rag_eval_framework`](https://github.com/minw0607/rag_eval_framework) is a further candidate adapter target for any scenario run against a RAG-backed assistant.
 
 ### Tier 1 — Foundational behavior
