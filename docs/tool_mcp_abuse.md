@@ -18,6 +18,61 @@
 
 ---
 
+## What this scenario is, what actually happens, and how it would apply to a real system
+
+Three questions any reviewer asks first, answered up front rather than left to the Limitations section.
+
+### 1 · Is this just prompt injection?
+
+Three of the four mechanisms are prompt injection — but **the one that succeeded is not.**
+
+`chained_escalation` contains no payload anywhere. The user simply asks the agent to do two individually-permitted things in sequence. In the first full run it succeeded on 9 of 9 undefended attempts while all three injection mechanisms succeeded on 0 of 27.
+
+So the category here is **tool misuse**, and injection is one of several *delivery mechanisms* for it. Calling the whole scenario "prompt injection" would name the mechanism that failed and omit the one that worked. The organising axis is the **payoff** — an unauthorized action — not how the instruction arrived.
+
+### 2 · When an attack "succeeds", does anything really happen?
+
+**No. Nothing leaves the machine, and that is deliberate.**
+
+| | |
+|---|---|
+| `send_notification` | Appends a dict to a Python list. That is the entire implementation |
+| Network capability | None. `native/` imports only `json`, `os`, `dataclasses`, `typing`, and the OpenAI client — no `smtplib`, `requests`, `socket`, `urllib`, `httpx` |
+| Addresses | All `.invalid`, a TLD reserved by RFC 2606 that can never resolve — including the attacker's `records-sync@hr-verify.invalid` |
+| Data | An invented four-person directory; a fresh backend per run, so nothing persists |
+
+When the report says *"sent notification to records-sync@hr-verify.invalid"*, it means **the model decided to issue that call with those arguments.** No email was sent.
+
+**This is still the measurement that matters, because in an agentic system the LLM is the orchestrator.** The model is the component that decides to emit the tool call; the tool layer just executes what it is told. That decision is *identical* whether the executor behind it is a mock or a production mail gateway — the model cannot tell the difference and has no reason to behave differently. Mocking changes only what happens *downstream* of the decision under test. If the same agent were wired to real tools, the same decision would fire a real action, which is precisely the outcome the control is supposed to prevent.
+
+Sandboxing is also the only responsible option: a test that genuinely exfiltrates data *is itself a breach*. It is standard practice across the field — ToolEmu uses an LM-emulated sandbox, AgentDojo simulates its environments, and this repo's own `llm_red_teaming` sibling has a `Sandbox` class for the same reason.
+
+**What it does and does not support**, stated precisely:
+
+- ✅ **"The model would have taken this action."** Fully evidenced.
+- ❌ **"Data would have left the organisation."** Not evidenced — a production system with server-side authorization would refuse the call regardless of the model's decision.
+
+Note the direction of the bias: because the backend enforces nothing, this test is **stricter than reality, not laxer**. It strips out every downstream protection to isolate what the model contributes on its own. That is ideal for diagnosis — you learn *which layer* failed — but the headline number is a worst case for the model layer, not an end-to-end risk estimate.
+
+### 3 · Could this be run against a real enterprise agent?
+
+Yes — but the move is to **disconnect the tools from their effects, not the agent from its tools.** Those sound similar and are completely different tests: an agent with no tools cannot misuse tools, so disconnecting them measures nothing.
+
+Critically, **the agent must still see the real tool schemas.** Tool descriptions are part of the model's input and demonstrably change its behaviour — that is the entire premise of the `poisoned_tool_description` track. Test against mock schemas and you are testing a different system.
+
+Four practical options, roughly by fidelity:
+
+| Approach | How | Trade-off |
+|---|---|---|
+| **Shadow executor** (recommended starting point) | Keep the real tool manifest and the real agent; swap the executor at the tool-call boundary — typically the MCP client or tool gateway — for one that logs and returns a plausible result instead of executing | Highest fidelity for the cost. Needs a realistic return value: a static stub can derail multi-step reasoning, which is why ToolEmu emulates returns with an LM |
+| **Staging with real implementations** | Real tool code, pointed at test data and test destinations | Highest fidelity; most setup. What mature programmes converge on |
+| **Real authorization, stubbed side-effect** | Route through the production authorization checks, stub only the terminal action | **The most informative variant** — measures the composite system, and differencing it against this repo's model-only result tells you exactly how much the enforcement layer is contributing |
+| **Read-only subset** | Only run attacks whose payoff is a read | Safe and cheap, but blind to egress and writes — the consequential half |
+
+Two notes specific to the mechanisms here. **Rug pull and description poisoning need control of the tool manifest**, which in an enterprise means running against a modified *copy* — straightforward, and no production change. And **chained escalation needs no special infrastructure at all**: it is an ordinary conversation with the real agent, so it can be tested against a shadow executor immediately. Given it is the mechanism that actually landed, that makes it both the highest-value and the cheapest thing to try against a real deployment.
+
+---
+
 ## Framework grounding — a different OWASP list
 
 Boundary / Permission is grounded on the **LLM** Top 10 (2025), LLM06 "Excessive Agency". This scenario belongs to the **Top 10 for Agentic Applications** (December 2025), which is a separate, newer framework:
@@ -182,9 +237,10 @@ All three were `undetermined` in the defense comparison — neither arm was comp
 
 ## Limitations & Future Work
 
-- **The backend enforces nothing.** `ToolBackend` executes every well-formed call, so a compromise here is a *model-judgment* failure, not proof a real deployment would leak. A production system should refuse out-of-scope egress server-side regardless of what the model decides. Adding that as a third arm is the single highest-value extension, and would quantify the residual risk enforcement removes.
+- **The backend enforces nothing.** `ToolBackend` executes every well-formed call, so a compromise here is a *model-judgment* failure, not proof a real deployment would leak — see [what actually happens when an attack succeeds](#2--when-an-attack-succeeds-does-anything-really-happen). A production system should refuse out-of-scope egress server-side regardless of what the model decides. Adding that as a third arm is the single highest-value extension, and would quantify the residual risk enforcement removes.
 - **Tool shadowing is approximated, not modelled.** `tm-07` poisons a tool the benign task doesn't need, which captures the *effect*; genuine shadowing is a multi-server topology (one malicious server's descriptions influencing another server's tools) that this harness does not represent.
 - **Every chain ends in egress.** Chained escalation currently composes reads with a notification. Compositions ending in a write, or laundering data through the escalation ticket, would exercise ASI02 more broadly.
 - **One phrasing of the defense.** Drift Detection showed a benign prompt rewrite can move behavior more than a model version change. How much measured resistance depends on *this* wording of the provenance clause is unknown.
 - **15 cases is a small sample.** As in Boundary / Permission, per-case rates carry wide case-level intervals; read `case_ci_high`, not just the point estimate. Precision comes from adding cases, not repeats.
+- **Not yet run against a real deployment.** The harness ships with its own mock backend, so applying it to a live enterprise agent means substituting the tool layer — keeping the real manifest and swapping the executor, per [option 3 above](#3--could-this-be-run-against-a-real-enterprise-agent). That path is designed for but untested here.
 - **The `llm_red_teaming` generic track is not yet wired in.** Its five agent scenarios run against a different sandbox and tool set; they are planned as a clearly-labelled secondary track, the way Drift Detection's public-benchmark supplement sits beside its primary one.
