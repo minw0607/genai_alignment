@@ -70,13 +70,13 @@ cd .. && git clone https://github.com/minw0607/multi_agent_otel_eval Agent
 
 `adapters/agent_otel.py` looks for it at `../Agent` relative to this repo. Its own runtime dependencies (LangChain, LangGraph, etc.) are a separate install: `pip install -e ".[agentic]"`.
 
-[Adversarial inputs](docs/adversarial_inputs.md) depends on [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming), also not pip-installable — clone it as a sibling of this repo's parent directory, matching its own name so `adapters/red_teaming.py` finds it at `../llm_red_teaming`:
+[Adversarial inputs](docs/adversarial_inputs.md) and [Tool / MCP abuse](docs/tool_mcp_abuse.md)'s secondary track depend on [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming), also not pip-installable — clone it as a sibling of this repo's parent directory, matching its own name so `adapters/red_teaming.py` finds it at `../llm_red_teaming`:
 
 ```bash
 cd .. && git clone https://github.com/minw0607/llm_red_teaming llm_red_teaming
 ```
 
-Adversarial Inputs' retail-chatbot track reuses `llm_red_teaming`'s `PromptInjectionRunner` directly (only `openai`/`pandas`/`python-dotenv`, already present via `genai_capability_bench`); its document-review track is native to this repo and only needs `llm_red_teaming` for `AzureOpenAITarget` connectivity. `llm_red_teaming`'s other workstreams (jailbreaking, adversarial NLP — not yet adapted) need heavier packages (`torch`, `transformers`, `textattack`) — irrelevant until those are built.
+Adversarial Inputs' retail-chatbot track reuses `llm_red_teaming`'s `PromptInjectionRunner` directly (only `openai`/`pandas`/`python-dotenv`, already present via `genai_capability_bench`); its document-review track is native to this repo and only needs `llm_red_teaming` for `AzureOpenAITarget` connectivity. Tool / MCP Abuse' secondary track reuses `llm_red_teaming`'s five agentic tool-attack scenarios, its ReAct agent, and its `Sandbox` unchanged via `AgentAttackHarness` — same lightweight dependencies, and it is optional: the primary track is native and runs without the sibling checkout. `llm_red_teaming`'s other workstreams (jailbreaking, adversarial NLP — not yet adapted) need heavier packages (`torch`, `transformers`, `textattack`) — irrelevant until those are built.
 
 <a id="scenario-library"></a>
 
@@ -183,7 +183,7 @@ Testing whether an enterprise GenAI system is *aligned* draws on capability meas
 | Scenario | Risk if untested | What we test | Existing coverage | Treatment |
 |---|---|---|---|---|
 | Multi-agent orchestration & handoff | Privilege / context leak across handoffs; emergent behavior no single agent owns | Integrity of delegation, context-passing, least-privilege across agents | [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) — OTel tracing, multi-agent, Mind2Web | Adapter |
-| [Tool / MCP abuse & privilege escalation](docs/tool_mcp_abuse.md) | Permitted tools chained to unauthorized outcomes; MCP calls escalate or exfiltrate | Composed tool / MCP actions stay within policy, via poisoned tool results, poisoned tool descriptions, rug pulls, and permitted-call chaining — the attacker-driven twin of boundary/permission | `llm_red_teaming` — agentic tool attacks | Native + adapter-ready |
+| [Tool / MCP abuse & privilege escalation](docs/tool_mcp_abuse.md) | Permitted tools chained to unauthorized outcomes; MCP calls escalate or exfiltrate | Composed tool / MCP actions stay within policy, via poisoned tool results, poisoned tool descriptions, rug pulls, and permitted-call chaining — the attacker-driven twin of boundary/permission, plus a secondary track of five externally authored scenarios run unchanged as an outside check | [`llm_red_teaming`](https://github.com/minw0607/llm_red_teaming) — agentic tool attacks | Native + adapter |
 | Autonomy & human-oversight gating | Agent acts where human approval is required; oversight gates do not trigger | Oversight gates fire at the right autonomy level & risk threshold | *none* — no one verifies approval gates actually fire | Native |
 | Sensitive-data handling (MNPI / PII) | Accesses, retains, or discloses MNPI / PII / client data beyond policy | Data minimization, segregation, and disclosure controls in agent actions | `llm_red_teaming` — memorization/PII/RAG exfiltration data red-team | Adapter + extend for MNPI |
 | Third-party / vendor agents | Vendor agents behave outside controls; integration / auth weaknesses | Vendor agent behavior + integration controls (APIs, auth, data flow) | *none* — no vendor-agent control-boundary auditing | Native |
