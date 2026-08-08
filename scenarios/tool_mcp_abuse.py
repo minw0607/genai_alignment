@@ -764,7 +764,7 @@ def build_report(cases: pd.DataFrame, results: pd.DataFrame, track_summary: pd.D
             ("Secondary track — externally authored scenarios", _display_generic(generic_summary)),
             ("Secondary track — indirect vs direct (externally authored only)",
              _display_generic(generic_type_summary)),
-        ] + ([("Secondary track — blatant vs subtle wording", phrasing_cmp)]
+        ] + ([("Secondary track — blatant vs subtle wording", _display_generic(phrasing_cmp))]
              if len(phrasing_cmp) else []) if has_generic else []),
         charts=charts,
         executive_summary=executive_summary,
@@ -921,11 +921,11 @@ def _display_generic(df: pd.DataFrame) -> pd.DataFrame:
     column is left untouched everywhere else.
     """
     out = df.copy()
-    if "unsafe_rate" in out.columns:
-        out["unsafe_rate"] = [
-            "no conclusive runs" if pd.isna(v) else f"{float(v):.0%}"
-            for v in out["unsafe_rate"]
-        ]
+    # Matches `unsafe_rate` and `unsafe_rate_of_conclusive` alike — the phrasing
+    # table uses the longer name, and a bare NaN there reads as a defect too.
+    for col in [c for c in out.columns if c.startswith("unsafe_rate")]:
+        out[col] = ["no conclusive runs" if pd.isna(v) else f"{float(v):.0%}"
+                    for v in out[col]]
     return out
 
 
@@ -1045,11 +1045,21 @@ def plot_generic(generic_summary: pd.DataFrame) -> ChartImage:
 def generic_observations(generic_summary: pd.DataFrame,
                          type_summary: pd.DataFrame) -> list[str]:
     """Derived from the data, never hardcoded to a scenario name — the failure
-    mode this scenario has already been bitten by twice."""
+    mode this scenario has already been bitten by twice.
+
+    Every claim that rests on *external authorship* ("on fixtures this repo did
+    not author") counts externally authored scenarios only. Locally authored
+    variants are reported by `phrasing_observation` instead. Filtering
+    `summarize_generic_by_type` alone was not enough: the counts quoted in
+    these sentences come from `generic_summary`, which carries both.
+    """
     if not len(generic_summary):
         return []
     obs = []
-    conclusive_rows = generic_summary[generic_summary["n_conclusive"] > 0]
+    external = (generic_summary[generic_summary["authored"] == "external"]
+                if "authored" in generic_summary.columns else generic_summary)
+    n_local = len(generic_summary) - len(external)
+    conclusive_rows = external[external["n_conclusive"] > 0]
     if not len(conclusive_rows):
         return ["No run in the secondary track reached a conclusive outcome, so it reports nothing "
                 "about resistance. Check for platform blocks or agent format failures."]
@@ -1107,6 +1117,7 @@ def generic_observations(generic_summary: pd.DataFrame,
                 "question."
             )
 
+    # Harness health, not an authorship claim — counted across every scenario run.
     n_blocked = int(generic_summary["n_blocked"].sum())
     n_incomplete = int(generic_summary["n_incomplete"].sum())
     n_lost = n_blocked + n_incomplete
@@ -1135,13 +1146,21 @@ def generic_observations(generic_summary: pd.DataFrame,
             "judgment." + tail
         )
 
-    flippers = generic_summary[generic_summary["flipped"]]
+    flippers = generic_summary[generic_summary["flipped"]]  # whole-track: a flip is a flip
     if len(flippers):
         obs.append(
             f"**{len(flippers)} scenario{'s' if len(flippers) != 1 else ''} flipped across repeats** "
             f"({', '.join(flippers['label'])}) — the same attack both succeeded and failed against "
             "the same configuration. This is exactly what repeats are for: a single run would have "
             "reported one of those outcomes as if it were the system's settled behaviour."
+        )
+    if n_local:
+        obs.append(
+            f"**{n_local} locally authored variant{'s' if n_local != 1 else ''} ran alongside the "
+            f"externally authored set** and {'are' if n_local != 1 else 'is'} excluded from every "
+            f"count above, so the external reproduction stays a genuinely outside measurement. "
+            f"{'They are' if n_local != 1 else 'It is'} reported in the blatant-vs-subtle "
+            "comparison instead."
         )
     return obs
 
@@ -1195,9 +1214,10 @@ def artifacts(saved_paths: dict[str, str]) -> list[Artifact]:
         items.append(Artifact("Defended vs. undefended", saved_paths["defense_comparison"],
                               "Whether the instruction-provenance clause changed attack success, per mechanism."))
     if "generic_raw" in saved_paths:
-        items.append(Artifact("Secondary track — raw runs (input: sibling repo)", saved_paths["generic_raw"],
-                              "One row per externally authored scenario per repeat, with outcome, sink calls, "
-                              "and whether the injection was delivered."))
+        items.append(Artifact("Secondary track — raw runs", saved_paths["generic_raw"],
+                              "One row per scenario per repeat, with outcome, sink calls, and whether the "
+                              "injection was delivered. The `authored` column separates the externally "
+                              "authored scenarios from locally authored variants."))
     if "generic_summary" in saved_paths:
         items.append(Artifact("Secondary track — per-scenario rates", saved_paths["generic_summary"],
                               "Unsafe-action rate over conclusive runs, with blocked/incomplete counts "
