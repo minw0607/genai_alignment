@@ -14,6 +14,8 @@
 
 </div>
 
+> **Status:** Independent personal research project
+
 ---
 
 <a id="overview"></a>
@@ -376,6 +378,16 @@ genai_alignment/
 - [`multi_agent_otel_eval`](https://github.com/minw0607/multi_agent_otel_eval) — OTel-instrumented multi-agent orchestration eval
 - [`rag_eval_framework`](https://github.com/minw0607/rag_eval_framework) — provider-agnostic RAG evaluation
 - [`Regulus`](https://github.com/minw0607/Regulus) — cited cross-framework governance crosswalk pattern this repo's reporting follows
+
+## Disclaimer
+
+This repository is an independent personal project created outside of my employment using my own time and equipment.
+
+Unless explicitly stated otherwise, the code, notebooks, demonstrations, analyses, and documentation in this repository are developed independently from publicly available research papers, technical documentation, regulations, and other public sources. They do not rely on, incorporate, or disclose any confidential, proprietary, non-public, or client information obtained through my employment or professional engagements.
+
+The views, designs, implementations, and conclusions expressed in this repository are solely my own and do not represent the views of any employer, client, or affiliated organization.
+
+This repository is provided for research and educational purposes only.
 
 ## License
 
