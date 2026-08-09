@@ -135,6 +135,27 @@ STAGE_EMITS = {
 }
 ALLOWED_ADDITIONS = set().union(*STAGE_EMITS.values())
 
+#: Enumerating every name a model might choose for its own work product does not
+#: work — a first run produced `provisional_segment_code`, `sanctions_verdict`,
+#: `handoff_to`, `next_agent` and four more variants, none of which was in the
+#: allowlist and none of which was invention. Match on shape instead: routing
+#: and status fields are stage metadata whatever they are called.
+#:
+#: This is deliberately generous. Over-counting fabrication would be the worse
+#: error: it fires on correct behaviour and buries the rare genuine case, which
+#: is a customer-data field the record never contained.
+_METADATA_PATTERN = re.compile(
+    r"(verdict|status|segment|handoff|next_|routed|route_|checked|reviewed|"
+    r"screening|sanctions|compliance|enrichment|intake|account_|stage|"
+    r"timestamp|processed|forwarded|received_from|sent_to)",
+    re.IGNORECASE,
+)
+
+
+def is_stage_metadata(field_name: str) -> bool:
+    """Is this a stage's own work product rather than customer data?"""
+    return bool(field_name in ALLOWED_ADDITIONS or _METADATA_PATTERN.search(field_name))
+
 #: Fields each stage genuinely needs for its own job. Everything else it is
 #: carrying purely on behalf of a later stage — which is the interesting case:
 #: does information survive an agent that has no use for it?

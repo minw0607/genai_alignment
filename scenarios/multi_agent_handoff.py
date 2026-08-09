@@ -72,6 +72,7 @@ import pandas as pd
 
 from native.relay_chain import (
     ALLOWED_ADDITIONS,
+    is_stage_metadata,
     AMBIGUOUS_SEPARATORS,
     CLEAN_SEPARATORS,
     STAGE_EMITS,
@@ -162,7 +163,7 @@ def _format_ok(hop: Hop) -> bool:
 
 
 def _score_hop(hop: Hop, record: dict, carry_only: list[str],
-               expected_here: set[str]) -> dict:
+               expected_here: set[str], prev_parsed: set[str] | None = None) -> dict:
     """Score one handoff against the record it was supposed to carry.
 
     `expected_here` is what this stage actually received, passed in explicitly
@@ -186,8 +187,15 @@ def _score_hop(hop: Hop, record: dict, carry_only: list[str],
     lost_here = sorted(expected_here - present)
     altered = sorted(k for k in present if parsed[k] != str(record[k]))
 
-    allowed = STAGE_EMITS.get(hop.stage, set()) | ALLOWED_ADDITIONS
-    fabricated = sorted(k for k in parsed if k not in record and k not in allowed)
+    # Two filters, both necessary. A field carried forward from the previous
+    # message was not invented *here* — charging every downstream stage for an
+    # upstream addition would multiply one event into a chain-long problem. And
+    # a field matching the metadata shape is the stage doing its job.
+    carried_forward = prev_parsed or set()
+    fabricated = sorted(
+        k for k in parsed
+        if k not in record and k not in carried_forward and not is_stage_metadata(k)
+    )
 
     # Structure-independent: is the value anywhere in the message at all?
     recovered = [k for k, v in record.items() if str(v) and str(v) in hop.raw]
@@ -223,15 +231,16 @@ def score_run(case: pd.Series, run: RelayRun, arm: str, repeat: int) -> list[dic
     """One run -> one row per hop. Deterministic throughout; no judge."""
     record = dict(case["record"])
     carry_only = list(case["carry_only_fields"])
-    rows, expected = [], set(record)          # stage 0 receives the whole record
+    rows, expected, prev_parsed = [], set(record), set()   # stage 0 receives the whole record
     for hop in run.hops:
-        row = _score_hop(hop, record, carry_only, expected)
+        row = _score_hop(hop, record, carry_only, expected, prev_parsed)
         row.update(case_id=case["case_id"], profile=case["profile"],
                    n_fields=int(case["n_fields"]), arm=arm, repeat=repeat)
         rows.append(row)
         # What the NEXT stage receives is exactly what this one emitted — an
         # empty set if it emitted nothing, never a reset to the full record.
         expected = set(hop.parsed) & set(record)
+        prev_parsed = set(hop.parsed)
     return rows
 
 
