@@ -1,4 +1,11 @@
+# Credentials. `.env` holds real keys and must never be committed; the
+# `.env.*` glob also catches backups and local variants (.env.backup, .env.local),
+# which the bare `.env` pattern does not — a backup copy of a credentials file is
+# still a credentials file. `.env.example` is the public template and is the one
+# env file that IS tracked.
 .env
+.env.*
+!.env.example
 .venv/
 venv/
 __pycache__/
