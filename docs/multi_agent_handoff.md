@@ -123,7 +123,7 @@ Six hand-authored records, entirely synthetic; all addresses and emails use rese
 
 ## Sample Results
 
-6 records × 3 repeats × 5 configurations = 90 runs, 414 scored hops.
+Full report: [`docs/samples/multi_agent_handoff_report.html`](samples/multi_agent_handoff_report.html) (open in a browser — GitHub shows raw HTML source). 6 records × 3 repeats × 5 configurations = **90 runs, 414 scored hops**. Your own configured LLM provider and models (see [.env.example](../.env.example)); no judge model anywhere.
 
 | Configuration | Format | Completeness | Accuracy | Fabrication | Cases failing |
 |---|---|---|---|---|---|
@@ -134,6 +134,10 @@ Six hand-authored records, entirely synthetic; all addresses and emails use rese
 | **`small_all`** | **94.4%** | **60.2%** | **83.3%** | **38.9%** | **5/6** |
 
 Both small-model configurations differ from baseline significantly (p = 0.003 and p < 0.001). Neither the ambiguous specification nor the shorter chain moved anything.
+
+![Handoff compliance by configuration — format, completeness and verbatim accuracy on the final message](samples/images/multi_agent_handoff_00_compliance_by_arm.png)
+
+![Record survival across the chain — cumulative completeness at each hop, per configuration](samples/images/multi_agent_handoff_01_record_survival.png)
 
 ### The architecture people actually build is the one that breaks
 
@@ -146,6 +150,8 @@ It lost **9% of fields** and invented something in **11% of runs**, while the fu
 The baseline lost nothing, and separate probing pushed the same pipeline to **60 fields** and **10 hops** without a single lost or altered value. It also held under a directly conflicting instruction: told simultaneously to *carry every field* and to *keep output concise*, the chain treated the explicit compliance rule as binding and the efficiency pressure as advisory, at every hop.
 
 That is a legitimate finding, not an absence of one. It also means **model tier is the only variable in this scenario that produces signal**, and the scenario should be read as a model-selection guideline for relay positions rather than a general result about handoff integrity.
+
+![Selective versus indiscriminate loss — retention of fields a stage used against fields it was only carrying](samples/images/multi_agent_handoff_02_selectivity.png)
 
 ### Loss is indiscriminate, not selective — a prediction that failed
 
