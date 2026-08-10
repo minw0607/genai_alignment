@@ -413,11 +413,22 @@ def altered_field_report(results: pd.DataFrame) -> pd.DataFrame:
     decided to improve is the finding — a corrected job title is a data-quality
     annoyance; a corrected identifier is a compliance incident.
     """
+    # An all-empty text column reads back from CSV as float NaN, and NaN != ""
+    # is True — so filtering on != "" lets every empty row through, and
+    # str(NaN).split(",") yields the literal string "nan" as a field name. That
+    # produced 23 phantom rows claiming alterations in arms that altered
+    # nothing. Scenario 6 hit the identical bug; guard on the value's type, not
+    # on its inequality to the empty string.
     rows = []
-    for _, r in results[results["altered_fields"] != ""].iterrows():
-        for fld in str(r["altered_fields"]).split(","):
-            rows.append({"arm": r["arm"], "stage": r["stage"], "case_id": r["case_id"],
-                         "field": fld})
+    for _, r in results.iterrows():
+        cell = r.get("altered_fields")
+        if not isinstance(cell, str) or not cell.strip():
+            continue
+        for fld in cell.split(","):
+            fld = fld.strip()
+            if fld:
+                rows.append({"arm": r["arm"], "stage": r["stage"],
+                             "case_id": r["case_id"], "field": fld})
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
@@ -505,7 +516,8 @@ def plot_decay_by_hop(hop_summary: pd.DataFrame) -> ChartImage:
 
 def build_observations(results: pd.DataFrame, arm_summary: pd.DataFrame,
                        hop_summary: pd.DataFrame, cmp: pd.DataFrame,
-                       profile_summary: pd.DataFrame) -> list[str]:
+                       profile_summary: pd.DataFrame,
+                       selectivity_frame: pd.DataFrame | None = None) -> list[str]:
     """Every claim read out of the frame — never hardcoded to an arm or stage."""
     obs: list[str] = []
     if not len(arm_summary):
@@ -607,6 +619,32 @@ def build_observations(results: pd.DataFrame, arm_summary: pd.DataFrame,
                     "were reproduced as given rather than tidied."
                 )
 
+    # Selectivity — the prediction the carry_only_heavy fixture was built to test.
+    if selectivity_frame is not None and len(selectivity_frame):
+        lossy = selectivity_frame[selectivity_frame["own_fields_retained"] < 1]
+        if len(lossy):
+            gaps = lossy["gap"]
+            if (gaps.abs() < 0.10).all():
+                obs.append(
+                    "**Loss is indiscriminate, not selective — the prediction behind the "
+                    "carry-only fixture failed.** Across every configuration that lost anything, "
+                    f"retention of fields a stage never used tracked retention of fields it did "
+                    f"use to within {gaps.abs().max():.1%}. Agents are not shedding what they had "
+                    "no need for; they are dropping fields roughly at random. That is the better "
+                    "of the two outcomes — an obvious field goes missing as readily as an obscure "
+                    "one, so the damage is more likely to be noticed downstream — and it changes "
+                    "what to monitor: total completeness rather than the sensitive fields alone."
+                )
+            else:
+                worst = lossy.loc[gaps.abs().idxmax()]
+                obs.append(
+                    f"**Loss looks selective under {ARM_LABELS.get(worst['arm'], worst['arm'])}** "
+                    f"— a {worst['gap']:+.1%} gap between fields the stage used and fields it was "
+                    "only carrying. Before acting on it, check the gap widens in the more degraded "
+                    "configurations; selectivity that appears in a mild arm and vanishes in a "
+                    "harsher one is noise."
+                )
+
     # Fabrication is rare enough to be worth naming when it happens.
     fab = float(fin["n_fabricated"].gt(0).mean()) if len(fin) else 0.0
     if fab:
@@ -634,7 +672,8 @@ def _display(df: pd.DataFrame) -> pd.DataFrame:
 def build_report(cases: pd.DataFrame, results: pd.DataFrame, arm_summary: pd.DataFrame,
                  hop_summary: pd.DataFrame, cmp: pd.DataFrame, profile_summary: pd.DataFrame,
                  altered: pd.DataFrame, charts: list[ChartImage],
-                 artifacts_table: pd.DataFrame | None = None) -> ScenarioReport:
+                 artifacts_table: pd.DataFrame | None = None,
+                 selectivity: pd.DataFrame | None = None) -> ScenarioReport:
     n_repeats = _observed_repeats(results)
     fin = final_hop(results)
     base = arm_summary[arm_summary["arm"] == "baseline"]
@@ -726,10 +765,13 @@ def build_report(cases: pd.DataFrame, results: pd.DataFrame, arm_summary: pd.Dat
             ("Where compliance is lost — by stage", _display(hop_summary)),
             ("Each arm against baseline", cmp),
             ("By record profile", _display(profile_summary)),
-        ] + ([("Which values were altered", altered)] if len(altered) else []),
+        ] + ([("Selective vs indiscriminate loss", _display(selectivity))]
+             if selectivity is not None and len(selectivity) else [])
+          + ([("Which values were altered", altered)] if len(altered) else []),
         charts=charts,
         executive_summary=executive_summary,
-        observations=build_observations(results, arm_summary, hop_summary, cmp, profile_summary),
+        observations=build_observations(results, arm_summary, hop_summary, cmp,
+                                        profile_summary, selectivity),
         high_risk_cases=[],
         next_steps=[
             "Add a branching topology. The chain is strictly sequential, so a record has exactly "
@@ -800,3 +842,89 @@ def artifacts(saved_paths: dict[str, str]) -> list[Artifact]:
         items.append(Artifact("Values that were altered", saved_paths["altered"],
                               "Which specific fields agents 'corrected', and at which stage."))
     return items
+
+
+# ---------------------------------------------------------------- Selectivity
+
+def selectivity_summary(results: pd.DataFrame) -> pd.DataFrame:
+    """Are fields an agent had no use for dropped more often than ones it used?
+
+    This is the question the `carry_only_heavy` fixture was built to answer, and
+    the answer matters: an agent that forwards what it worked with and sheds the
+    rest fails *selectively*, and what it sheds — accessibility needs,
+    deputyship orders, vulnerability markers — is precisely what a regulator
+    asks about later.
+
+    Reported as a comparison rather than a single rate, because only the gap is
+    informative. Equal retention means loss is indiscriminate: bad, but bad in a
+    way that hits an obvious field as readily as an obscure one, so it is more
+    likely to be noticed downstream.
+
+    Restricted to stages that actually use some fields for their own work —
+    `intake` and `account` use none, so there is no "own" side to compare
+    against and including them would average a real gap toward zero.
+    """
+    usable = results[results["own_fields_retained"].notna()
+                     & results["carry_only_retained"].notna()]
+    if not len(usable):
+        return pd.DataFrame()
+    rows = []
+    for arm, group in usable.groupby("arm"):
+        carry = float(group["carry_only_retained"].mean())
+        own = float(group["own_fields_retained"].mean())
+        gap = own - carry
+        # A 2-3 point gap on a few dozen hops is not distinguishable from noise,
+        # and the first run showed exactly that trap: one arm gapped 3.7pp while
+        # the MORE degraded arm gapped 0.0. Selectivity that appears in the
+        # milder configuration and vanishes in the harsher one is not
+        # selectivity. The threshold is deliberately high, and the verdict says
+        # what would make the claim believable rather than asserting it.
+        if own == carry == 1.0:
+            verdict = "nothing lost — selectivity undefined"
+        elif abs(gap) < 0.10:
+            verdict = (f"no clear preference (gap {gap:+.1%}) — too small to separate from "
+                       "noise at this sample size")
+        elif gap > 0:
+            verdict = "carry-only fields dropped more — check it holds in the harsher arms too"
+        else:
+            verdict = "used fields dropped more — the opposite of the expected pattern"
+        rows.append({
+            "arm": arm,
+            "n_hops": len(group),
+            "carry_only_retained": round(carry, 3),
+            "own_fields_retained": round(own, 3),
+            "gap": round(gap, 3),
+            "verdict": verdict,
+        })
+    order = {a: i for i, a in enumerate(ARM_SPECS)}
+    return (pd.DataFrame(rows).sort_values("arm", key=lambda s: s.map(order))
+            .reset_index(drop=True))
+
+
+def plot_selectivity(sel: pd.DataFrame) -> ChartImage:
+    arms = list(sel["arm"])
+    x = range(len(arms))
+    width = 0.38
+    fig, ax = plt.subplots(figsize=(9.5, 4.2))
+    ax.bar([i - width / 2 for i in x], sel["own_fields_retained"], width,
+           label="fields the stage used itself", color=PALETTE["neutral"])
+    ax.bar([i + width / 2 for i in x], sel["carry_only_retained"], width,
+           label="fields it was only carrying", color=PALETTE["warn"])
+    ax.set_xticks(list(x))
+    ax.set_xticklabels([ARM_LABELS[a].replace(" (", "\n(") for a in arms], fontsize=7.5)
+    ax.set_ylim(0, 1.1); ax.set_ylabel("retained")
+    ax.set_title("Does an agent drop what it had no use for?")
+    ax.legend(fontsize=8)
+    for i, (o, c) in enumerate(zip(sel["own_fields_retained"], sel["carry_only_retained"])):
+        ax.text(i - width / 2, o + 0.02, f"{o:.0%}", ha="center", fontsize=8)
+        ax.text(i + width / 2, c + 0.02, f"{c:.0%}", ha="center", fontsize=8)
+    plt.tight_layout()
+    chart = ChartImage(
+        title="Selective versus indiscriminate loss",
+        caption=("Bars of equal height mean loss is indiscriminate — the agent is as likely to "
+                 "drop a field it just used as one it was merely carrying. A shorter right-hand "
+                 "bar would mean agents shed what they had no use for, which is the more "
+                 "dangerous failure because what gets shed is systematically the obscure field."),
+        base64_png=fig_to_base64(fig), section="results")
+    plt.show()
+    return chart
