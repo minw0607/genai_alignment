@@ -19,6 +19,7 @@ def check_environment(
     *,
     required_packages: list[str] | None = None,
     required_env_vars: list[str] | None = None,
+    optional_env_vars: dict[str, str] | None = None,
     sibling_repos: dict[str, str] | None = None,
 ) -> bool:
     """Print a pass/fail status table for this notebook's dependencies.
@@ -29,6 +30,12 @@ def check_environment(
         e.g. "genai_capability_bench", not the package's PyPI name).
     required_env_vars : names that must be set (and non-empty) in the
         current environment (after load_dotenv()).
+    optional_env_vars : {name: consequence_if_unset}. Reported in the same
+        table with a warning marker, and summarised in the closing line, so a
+        notebook never prints "All checks passed" and then contradicts itself
+        with a separate warning further down. Unset optional vars do NOT make
+        this function return False — they change what a run means, not whether
+        it can proceed, and the caller decides how much that matters.
     sibling_repos : {relative_path: clone_url} for non-pip-installable
         sibling repos this notebook needs (e.g.
         {"../Agent": "https://github.com/minw0607/multi_agent_otel_eval"}).
@@ -56,6 +63,14 @@ def check_environment(
             rows.append((f"env var: {var}", "MISSING — check your .env (see .env.example)"))
             ok = False
 
+    n_optional_unset = 0
+    for var, consequence in (optional_env_vars or {}).items():
+        if os.environ.get(var):
+            rows.append((f"env var: {var}", "OK"))
+        else:
+            rows.append((f"env var: {var}", f"NOT SET — {consequence}"))
+            n_optional_unset += 1
+
     for path, url in (sibling_repos or {}).items():
         if Path(path).exists():
             rows.append((f"sibling repo: {path}", "OK"))
@@ -65,8 +80,14 @@ def check_environment(
 
     width = max((len(r[0]) for r in rows), default=0)
     for label, status in rows:
-        marker = "✓" if status == "OK" else "✗"
+        marker = "✓" if status == "OK" else ("⚠" if status.startswith("NOT SET") else "✗")
         print(f"{marker} {label.ljust(width)}  {status}")
 
-    print("\nAll checks passed." if ok else "\nFix the items above before continuing.")
+    if not ok:
+        print("\nFix the items above before continuing.")
+    elif n_optional_unset:
+        print(f"\nAll required checks passed — but {n_optional_unset} optional setting(s) "
+              f"are unset, which changes what this run can show. See the ⚠ line(s) above.")
+    else:
+        print("\nAll checks passed.")
     return ok
