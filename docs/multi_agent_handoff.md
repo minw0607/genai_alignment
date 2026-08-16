@@ -130,20 +130,48 @@ Full report: [`docs/samples/multi_agent_handoff_report.html`](samples/multi_agen
 | `baseline` | 100% | 100% | 100% | 0% | 0/6 |
 | `ambiguous_spec` | 100% | 100% | 100% | 0% | 0/6 |
 | `short_chain` | 100% | 100% | 100% | 0% | 0/6 |
-| **`small_relay`** | 100% | **90.9%** | 100% | **11.1%** | **4/6** |
-| **`small_all`** | **94.4%** | **60.2%** | **83.3%** | **38.9%** | **5/6** |
+| **`small_relay`** | **94.4%** | **84.9%** | 100% | **16.7%** | **6/6** |
+| **`small_all`** | **88.9%** | **64.9%** | **66.7%** | **16.7%** | **6/6** |
 
-Both small-model configurations differ from baseline significantly (p = 0.003 and p < 0.001). Neither the ambiguous specification nor the shorter chain moved anything.
+**Both small-model configurations differ from baseline significantly** in this run (6/6 cases vs 0/6, Fisher exact **p = 0.002** each). Neither the ambiguous specification nor the shorter chain moved anything.
+
+> **Correction (2026-08-12).** An earlier version of this page reported these as significant at p = 0.003 and p < 0.001. Those p-values counted *runs* rather than *cases*, treating 3 repeats of one record as 3 independent observations and inflating confidence. The verdicts above are recomputed on case counts with Fisher's exact test.
+
+### ⚠️ Read `small_relay` as directional, not as a point estimate
+
+Two full runs of this identical configuration produced materially different numbers:
+
+| | Run A | Run B (committed above) |
+|---|---|---|
+| Cases failing | **4/6** | **6/6** |
+| Completeness | 92.2% | 84.9% |
+| Fabrication | 11.1% | 16.7% |
+| Case-level p | **0.061** — not significant | **0.002** — significant |
+
+**The same configuration crossed the significance threshold between runs.** `small_all` did not move (6/6 both times), and the three clean arms never moved (0/6 every time) — so the instability is specific to the *partial* degradation case, which is exactly where six records has the least resolving power.
+
+What survives across both runs, and should be read as the finding:
+
+- A cheap model in the middle relay **degrades records**; a capable one does not.
+- The direction and rough magnitude are consistent.
+
+What does not survive, and should not be quoted:
+
+- Any specific failure rate for `small_relay`, or the claim that it is significant *per se*. One run says yes, one says no.
+
+This is a sample-size problem, not a scoring problem. The 6-vs-6 floor is p = 0.002, so the design *can* detect this effect — it just sits close enough to the boundary that a single run's draw decides the verdict. **Adding records is the fix, and it is the highest-value extension in this scenario.**
 
 ![Handoff compliance by configuration — format, completeness and verbatim accuracy on the final message](samples/images/multi_agent_handoff_00_compliance_by_arm.png)
 
 ![Record survival across the chain — cumulative completeness at each hop, per configuration](samples/images/multi_agent_handoff_01_record_survival.png)
 
-### The architecture people actually build is the one that breaks
+### The architecture people actually build is the one to watch
 
 `small_relay` is the common design: keep the capable model where it matters — at intake and at account opening — and put a cheap one in the middle, because "just passing the record along" looks easy.
 
-It lost **9% of fields** and invented something in **11% of runs**, while the fully-capable baseline lost nothing. The middle of a pipeline is not a safe place to economise, and the per-stage table shows why: the middle agents carry the most context and do the least with it.
+It lost **15% of fields** and invented something in **17% of runs**, while the fully-capable baseline lost nothing. The per-stage table suggests why: the middle agents carry the most context and do the least with it.
+
+**The direction is solid; the magnitude is not.** Every record failed in this run and two-thirds failed in the previous one — see the variance note above. A cheap model in the middle of a chain degrades what passes through it, consistently across runs; how badly is not yet pinned down at six records. `small_all`, which broke every record in both runs, is the result that stands unconditionally.
 
 ### Relay fidelity is solved at frontier tier — and that is a real result
 
@@ -155,7 +183,7 @@ That is a legitimate finding, not an absence of one. It also means **model tier 
 
 ### Loss is indiscriminate, not selective — a prediction that failed
 
-The `carry_only_heavy` record was built expecting agents to shed fields they had no use for, on the theory that an agent forwards what it worked with. **They don't.** Retention of carry-only fields tracks retention of fields the stage actually used, within noise (gaps of 0.0 and 3.7 percentage points, and the *more* degraded configuration showed the smaller gap — which is how you know the larger one is noise).
+The `carry_only_heavy` record was built expecting agents to shed fields they had no use for, on the theory that an agent forwards what it worked with. **They don't.** Retention of carry-only fields tracks retention of fields the stage actually used, within noise (gaps of 8.5 and 3.7 percentage points, and the *more* degraded configuration showed the **smaller** gap — which is how you know the larger one is noise rather than selectivity).
 
 This is worth recording rather than deleting. It is the better of the two outcomes: a degraded pipeline drops an obvious field as readily as an obscure one, so the damage is more likely to be caught downstream. Had the prediction held, losses would have concentrated silently in exactly the fields nobody checks. **It also changes what to monitor** — total completeness, not just the sensitive fields.
 
@@ -163,13 +191,13 @@ This is worth recording rather than deleting. It is the better of the two outcom
 
 Accuracy holds at 100% almost everywhere even as completeness collapses. A cheap model **omits** rather than **corrupts** — until the entire chain is cheap.
 
-At that point every alteration in the run occurs at a single stage: **the last one**, where the account is committed. And what it alters is not cosmetic — `tax_id`, `date_of_birth`, `full_name` (three times), `nationality`.
+At that point **every single alteration in the run occurs at one stage — the last one**, where the account is committed. Not one alteration happens anywhere else. And what it rewrites is not cosmetic: `tax_id`, `date_of_birth`, `full_name`, `nationality`, `annual_income` and `politically_exposed` were each altered on all 6 runs of that configuration.
 
 Two consequences. Operationally, a completeness check catches trouble earlier than a value-integrity check, because omission is the first symptom. Architecturally, **the final agent is the worst place to economise**, because an alteration there has no downstream stage left to catch it.
 
 ### Failures concentrate at one stage — and it isn't the separator
 
-Twelve of thirteen format failures land on the `compliance` agent. The obvious suspect was its `~` separator, so that was tested directly: **removing the tilde produced more failures, not fewer.** Ruled out.
+Fourteen of the seventeen format failures land on the `compliance` agent. The obvious suspect was its `~` separator, so that was tested directly: **removing the tilde produced more failures, not fewer.** Ruled out.
 
 The remaining explanation is that this stage has the vaguest job — screening checks a named list, enrichment assigns a code from income, while compliance merely "confirms the file is complete." A concrete task appears to anchor the format; a vague one doesn't. **That is a hypothesis, not a finding** — it has not been tested by rewriting the job description, which is the obvious next experiment.
 
@@ -199,7 +227,7 @@ It is also the only scenario whose headline result is a **capability boundary ra
 
 - **Model tier is the only live variable.** Field count, chain length, specification ambiguity and instruction conflict were all tested and none moved a capable model. The scenario's scope is genuinely narrower than its title suggests.
 - **"Small model" is not one thing.** The tier used here is where the boundary sits; two other small deployments relayed cleanly in earlier probing. The result is about *a* tier, not about cheap models generally.
-- **Six records is thin.** Every effect above is directionally solid — both small-model configurations are significant — but the *rates* carry wide case-level intervals (`small_relay` is 4/6 cases, CI 0.30–0.90).
+- **Six records is thin, and it shows.** `small_relay` scored 4/6 in one run and 6/6 in the next — crossing from p = 0.061 to p = 0.002 on nothing but a re-draw. `small_all` and the three clean arms were stable across both. The design has the power to detect an effect that breaks every record; it does not have the power to *estimate* one that breaks most of them. **Adding records is the single highest-value extension here.**
 - **The vague-job hypothesis is untested.** Rewriting the compliance agent's job description to be as concrete as screening's would settle whether task specificity anchors format compliance.
 - **No recovery stage.** Nothing in this pipeline detects that an upstream handoff was malformed. A stage that *rejected* a bad record rather than forwarding it is the obvious control, and its absence is why malformation compounds.
 - **Strictly sequential.** A fan-out/fan-in topology would test whether agents reconcile conflicting versions of a field or silently pick one.

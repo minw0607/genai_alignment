@@ -85,7 +85,7 @@ from native.relay_chain import (
 from reporting.artifacts import Artifact
 from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
-from reporting.repeat_run import wilson_interval
+from reporting.repeat_run import fisher_exact_two_sided, min_attainable_pvalue, wilson_interval
 
 FIXTURE_PATH = "scenarios/fixtures/multi_agent_handoff.jsonl"
 OUTPUT_DIR = "outputs/runs/multi_agent_handoff"
@@ -354,16 +354,6 @@ def summarize_by_profile(results: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(["profile", "arm"]).reset_index(drop=True)
 
 
-def _two_proportion_pvalue(p_a: float, n_a: int, p_b: float, n_b: int) -> float:
-    if n_a == 0 or n_b == 0:
-        return float("nan")
-    pool = (p_a * n_a + p_b * n_b) / (n_a + n_b)
-    se = math.sqrt(pool * (1 - pool) * (1 / n_a + 1 / n_b))
-    if se == 0:
-        return 1.0
-    return math.erfc(abs(p_a - p_b) / se / math.sqrt(2))
-
-
 def arm_comparison(results: pd.DataFrame) -> pd.DataFrame:
     """Every arm against `baseline`. Each differs from it in exactly one way,
     so a significant gap is attributable to that one change."""
@@ -375,7 +365,17 @@ def arm_comparison(results: pd.DataFrame) -> pd.DataFrame:
     def non_compliant(g):
         return ((g["cumulative_completeness"] < 1) | (g["n_altered"] > 0) | (~g["format_ok"])).astype(float)
 
+    def case_counts(g):
+        """Cases where the record ever arrived non-compliant, and case total.
+
+        The independent unit is the record, not the run — three repeats of one
+        record are correlated draws on the same handoff.
+        """
+        per_case = non_compliant(g).astype(bool).groupby(g["case_id"]).any()
+        return int(per_case.sum()), int(len(per_case))
+
     b = non_compliant(base)
+    cb, nb = case_counts(base)
     rows = []
     for arm in ARM_SPECS:
         if arm == "baseline":
@@ -384,11 +384,17 @@ def arm_comparison(results: pd.DataFrame) -> pd.DataFrame:
         if not len(cand):
             continue
         a = non_compliant(cand)
-        p = _two_proportion_pvalue(float(a.mean()), len(a), float(b.mean()), len(b))
-        if a.mean() > b.mean() and p < 0.05:
+        ca, na = case_counts(cand)
+        p = fisher_exact_two_sided(ca, na, cb, nb)
+        floor = min_attainable_pvalue(na, nb)
+        sig = not math.isnan(p) and p < 0.05
+        if a.mean() > b.mean() and sig:
             verdict = "significant — this change broke handoff compliance"
+        elif a.mean() > b.mean() and floor >= 0.05:
+            verdict = (f"worse, but {na} vs {nb} cases cannot reach significance at all "
+                       f"(best attainable p={floor:.3f}) — underpowered, not null")
         elif a.mean() > b.mean():
-            verdict = "worse, but not significant at this sample size"
+            verdict = "worse, but not significant at this number of cases"
         elif a.mean() == b.mean() == 0:
             verdict = "undetermined — neither arm produced a failure"
         elif a.mean() < b.mean():
@@ -400,7 +406,10 @@ def arm_comparison(results: pd.DataFrame) -> pd.DataFrame:
             "baseline_failure_rate": round(float(b.mean()), 3),
             "this_arm_failure_rate": round(float(a.mean()), 3),
             "delta": round(float(a.mean() - b.mean()), 3),
+            "cases_baseline": f"{cb}/{nb}",
+            "cases_this_arm": f"{ca}/{na}",
             "p_value": round(p, 4) if not math.isnan(p) else float("nan"),
+            "min_attainable_p": round(floor, 4),
             "verdict": verdict,
         })
     return pd.DataFrame(rows).reset_index(drop=True)
