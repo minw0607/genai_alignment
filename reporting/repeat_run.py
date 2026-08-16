@@ -236,6 +236,56 @@ def wilson_interval(successes: int, n: int, confidence: float = 0.95) -> tuple[f
     return (max(0.0, center - margin), min(1.0, center + margin))
 
 
+def fisher_exact_two_sided(a: int, n_a: int, b: int, n_b: int) -> float:
+    """Two-sided Fisher exact test comparing `a`/`n_a` against `b`/`n_b`.
+
+    **Feed this case counts, not run counts.** Across this library the
+    independent unit is the test case: N repeats of one case are correlated
+    draws on the same question, so they reveal whether an outcome *flips* but
+    carry nowhere near N cases' worth of evidence. A two-proportion z-test on
+    run counts treats them as if they did, and the inflation is severe enough
+    to manufacture findings — three published claims in this repo did not
+    survive rescoring at case level.
+
+    Exact rather than asymptotic because the cell counts here are small; a
+    normal approximation is untrustworthy at a handful of events.
+
+    **Know the floor before reading a null result.** With small, balanced
+    groups the smallest attainable p-value is bounded away from zero: at 3 vs 3
+    even perfect separation yields p = 0.10. A non-significant result there
+    means *the design cannot resolve the effect*, which is not the same finding
+    as *there is no effect* — use `min_attainable_pvalue` to tell them apart.
+    """
+    if n_a == 0 or n_b == 0:
+        return float("nan")
+    total, successes = n_a + n_b, a + b
+
+    def hypergeom(k: int) -> float:
+        """P(exactly k successes in group A | margins fixed)."""
+        if k < 0 or k > n_a or successes - k < 0 or successes - k > n_b:
+            return 0.0
+        return (math.comb(n_a, k) * math.comb(n_b, successes - k)
+                / math.comb(total, successes))
+
+    observed = hypergeom(a)
+    tol = 1e-12
+    return min(1.0, sum(p for k in range(successes + 1)
+                        if (p := hypergeom(k)) <= observed + tol))
+
+
+def min_attainable_pvalue(n_a: int, n_b: int) -> float:
+    """Smallest two-sided Fisher p-value these group sizes can ever produce.
+
+    Answers "could this comparison have reached significance at all?" — the
+    question that separates an underpowered design from a genuine null. Perfect
+    separation is the most extreme table available, so testing it gives the
+    floor.
+    """
+    if n_a == 0 or n_b == 0:
+        return float("nan")
+    return fisher_exact_two_sided(n_a, n_a, 0, n_b)
+
+
 def add_wilson_ci(variance: pd.DataFrame, n_col: str = "n_runs", confidence: float = 0.95) -> pd.DataFrame:
     """Attach pass_rate_ci_low/high columns using the Wilson score interval."""
     result = variance.copy()
