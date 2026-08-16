@@ -6,7 +6,7 @@ notes: >
   stratified sample via genai_capability_bench's curated_knowledge_v1 dataset).
 
 models:
-  - name: azure-target
+  - name: target-model
     provider: azure_openai
     model: "${TARGET_MODEL}"
     temperature: null           # omitted for reasoning models that reject it

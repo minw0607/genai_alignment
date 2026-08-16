@@ -4,7 +4,7 @@ default_pass_threshold: 0.7
 notes: "Tier 1 - Intended performance - internal HR/IT policy assistant persona"
 
 models:
-  - name: azure-target
+  - name: target-model
     provider: azure_openai
     model: "${TARGET_MODEL}"
     temperature: null           # omitted for reasoning models that reject it

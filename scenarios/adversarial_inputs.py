@@ -53,7 +53,7 @@ import pandas as pd
 
 from adapters.red_teaming import PromptInjectionHarness
 from reporting.artifacts import Artifact
-from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
+from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME, scrub_frame
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
 OUTPUT_DIR = "outputs/runs/adversarial_inputs"
@@ -351,7 +351,7 @@ def plot_document_review_outcomes(scored: pd.DataFrame) -> ChartImage:
         title="Document review outcomes by phrasing style",
         caption=(
             "'favorable'/'adverse' mean the decision actually changed relative to the same applicant's "
-            "clean baseline, in that direction. 'blocked' = Azure's platform content filter rejected the "
+            "clean baseline, in that direction. 'blocked' = the platform's own content filter rejected the "
             "request before the model saw it. Compare 'blatant' vs 'subtle' rows directly — the more "
             "commanding phrasing is the one modeled on the real Snyk exploit's wording."
         ),
@@ -408,7 +408,7 @@ def _observations(canary: pd.DataFrame, doc_scored: pd.DataFrame) -> list[str]:
     n_flipped = int(poisoned["flip_direction"].isin(["favorable", "adverse"]).sum())
     obs.append(
         f"Document review (indirect injection via hidden text): {n_blocked} of {len(poisoned)} poisoned "
-        f"attempts were blocked outright by Azure's platform content filter before reaching the model. "
+        f"attempts were blocked outright by the platform's own content filter before reaching the model. "
         f"Among the rest, {n_flipped} changed the actual lending decision relative to the same "
         "applicant's clean baseline — the measurement that mirrors what the real exploit this track is "
         "modeled on actually demonstrated."
@@ -480,7 +480,7 @@ def build_report(
         f"their authority or reach a manipulated decision. Retail chatbot ({len(canary)} direct-injection "
         f"attempts across 3 tasks x 5 strategies): {override_rate:.0%} override rate. Financial document "
         f"review ({len(poisoned_doc)} poisoned attempts across {len(APPLICANT_PROFILES)} applicant "
-        f"profiles): {n_blocked} blocked outright by Azure's platform content filter; among the rest, a "
+        f"profiles): {n_blocked} blocked outright by the platform's own content filter; among the rest, a "
         f"{flip_rate:.0%} decision-flip rate under an undefended system prompt"
         + (
             f" ({by_defense.get('undefended', 0):.0%} undefended vs. {by_defense.get('defended', 0):.0%} "
@@ -502,7 +502,7 @@ def build_report(
         "The document-review track's baseline decision comes from one clean run per profile, not a "
         "repeated/averaged one — a single noisy baseline call could itself misclassify a flip.",
         "Test more phrasing styles along the blatant-to-subtle spectrum to find the actual boundary "
-        "where Azure's content filter stops catching the injection.",
+        "where the platform's content filter stops catching the injection.",
     ]
 
     return ScenarioReport(
@@ -562,8 +562,14 @@ def build_report(
             ),
         ],
         results_tables=[
-            ("Retail chatbot canary results", canary.drop(columns=["canary"], errors="ignore")),
-            ("Document review results", doc_scored.drop(columns=["response"], errors="ignore")),
+            # `scrub_frame` because these tables carry raw model and API text.
+            # A gateway refusal names the provider in its error message, and
+            # publishing that column would disclose the deployment regardless of
+            # every generic label elsewhere on the page.
+            ("Retail chatbot canary results",
+             scrub_frame(canary.drop(columns=["canary"], errors="ignore"))),
+            ("Document review results",
+             scrub_frame(doc_scored.drop(columns=["response"], errors="ignore"))),
         ],
         charts=charts,
         executive_summary=executive_summary,
