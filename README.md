@@ -382,7 +382,9 @@ genai_alignment/
 - [`rag_eval_framework`](https://github.com/minw0607/rag_eval_framework) — provider-agnostic RAG evaluation
 - [`Regulus`](https://github.com/minw0607/Regulus) — cited cross-framework governance crosswalk pattern this repo's reporting follows
 
-## Disclaimer
+<a id="disclaimer"></a>
+
+## 🧾 Disclaimer
 
 This repository is an independent personal project created outside of my employment using my own time and equipment.
 
