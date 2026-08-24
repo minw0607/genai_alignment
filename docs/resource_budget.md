@@ -44,6 +44,20 @@ This is the same split the library already makes between [Boundary / Permission]
 
 That gap is this scenario.
 
+### Why the untested configuration is the common one
+
+Enterprise practice has converged on a shape this scenario happens to mirror. Token budgets are set as a **three-layer hierarchy** — global ceiling, team allocation, per-agent or per-individual cap — with agents governed under the same hierarchy as people ([Airia](https://airia.com/blog/how-to-set-token-budgets-and-spending-limits-for-enterprise-ai-programs/), [CloudNuro](https://www.cloudnuro.ai/blog/llm-token-budget-enforcement-guide)). Tracking is recommended at **per-agent, per-task granularity**, including input token volume by workflow and tool-call frequency, to support chargeback — which is Track B, more or less specified by the FinOps literature rather than invented here.
+
+The urgency is not speculative: Gartner (March 2026) puts agentic tasks at **5–30× the tokens of a standard chatbot turn**, and **83% of enterprise IT leaders** name LLM cost unpredictability a top concern ([Oplexa](https://oplexa.com/ai-inference-cost-crisis-2026/)).
+
+And one line from that literature is the reason this scenario's setup is worth defending rather than apologising for:
+
+> The most common audit finding across 2025 and 2026 is **a written AI policy with no enforcement mechanism behind it.** ([FinOps LLM](https://finopsllm.com/research/llm-budget-governance))
+
+That is exactly the configuration tested here — a limit stated in the system prompt with nothing counting, intercepting, or halting. **The 42% compliance figure below is therefore not an artificial weakness introduced for the experiment. It is a measurement of the single most common real-world control failure.**
+
+The same literature also asks for **hard caps in test environments and graceful degradation in production** — which is precisely the split between the two outcomes this scenario separates: an abort that produces nothing, and a stop that says what it could not do. That distinction is what [Track C ↓](#track-c--stated-versus-enforced-and-tokens-versus-calls) was built to measure.
+
 ---
 
 ## The design problem, stated before the design
