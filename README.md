@@ -129,12 +129,14 @@ flowchart TB
         E2["Tool / MCP abuse"]:::built
         E3["Autonomy &amp; oversight gating"]:::planned
         E4["Sensitive-data handling"]:::built
+        E5["Resource &amp; budget adherence"]:::built
     end
 
     subgraph S6["6 · HANDOFFS — sub-agents, vendor agents"]
         direction LR
-        F1["Multi-agent orchestration"]:::planned
-        F2["Third-party / vendor agents"]:::planned
+        F1["Multi-agent handoff compliance"]:::built
+        F2["Multi-agent delegation &amp; authority"]:::planned
+        F3["Third-party / vendor agents"]:::planned
     end
 
     S1 --> S2 --> S3 --> S4 --> S5 --> S6
@@ -155,10 +157,10 @@ flowchart TB
 | 2 · Instructions & policy | 2 | 0 | Mandate drift and prompt drift both tested |
 | 3 · The model | 3 | 0 | Correctness, consistency, and version drift all tested |
 | 4 · Reasoning loop | 2 | 0 | Tested via the agentic tracks in scenarios 2 and 3 |
-| 5 · Tool & data access | 4 | 0 | Benign-request (boundary/permission), attacker-driven (tool/MCP abuse), disclosure control under over-retrieval (sensitive-data), and resource limits (budget adherence) all built |
-| 6 · Handoffs | 1 | 1 | Handoff integrity built; multi-agent delegation still open |
+| 5 · Tool & data access | 4 | 1 | Benign-request (boundary/permission), attacker-driven (tool/MCP abuse), disclosure control under over-retrieval (sensitive-data), and resource limits (budget adherence) all built; autonomy/oversight gating still open |
+| 6 · Handoffs | 1 | 2 | Handoff integrity built; multi-agent delegation and third-party/vendor-agent audit both still open |
 
-Taking real actions and delegating to other agents are the two things that make an agentic system riskier than a chatbot. The action surface is covered from both directions — [Boundary / Permission](docs/boundary_permission.md) for honest requests and [Tool / MCP Abuse](docs/tool_mcp_abuse.md) for adversarial ones, deliberately split on *cause* because they need different repairs. Surface 6 now has its first build: [Multi-Agent Handoff Compliance](docs/multi_agent_handoff.md) tests whether a record survives being passed between agents intact. Surface 5 gained [Sensitive-Data Handling](docs/sensitive_data.md), which asks what an assistant discloses when retrieval hands it more of the customer database than the question needed — and found that **all 21 disclosures were of a person the enquiry was not about, and none was a verbatim protected value**, so the output filter most deployments rely on would have caught none of them. Surface 5 is now fully built with [Resource & Budget Adherence](docs/resource_budget.md), which found that a stated tool-call ceiling with nothing enforcing it is honoured on only **42% of runs when it binds**; that the agent's unbudgeted consumption varies **3x on identical input**, driven by duplicate retrieval rather than any extra work; and that the enforcement primitive most engineers would reach for — a callback that raises — **works for tokens and silently does nothing for tool calls**, reporting a breach, producing no abort, and yielding a compliance number identical to having no enforcement at all. **Multi-agent delegation — one agent handing another the authority to act — remains untested**, and is the largest remaining gap.
+Taking real actions and delegating to other agents are the two things that make an agentic system riskier than a chatbot. The action surface is covered from both directions — [Boundary / Permission](docs/boundary_permission.md) for honest requests and [Tool / MCP Abuse](docs/tool_mcp_abuse.md) for adversarial ones, deliberately split on *cause* because they need different repairs. Surface 6 now has its first build: [Multi-Agent Handoff Compliance](docs/multi_agent_handoff.md) tests whether a record survives being passed between agents intact. Surface 5 gained [Sensitive-Data Handling](docs/sensitive_data.md), which asks what an assistant discloses when retrieval hands it more of the customer database than the question needed — and found that **all 21 disclosures were of a person the enquiry was not about, and none was a verbatim protected value**, so the output filter most deployments rely on would have caught none of them. Surface 5 gained [Resource & Budget Adherence](docs/resource_budget.md), which found that a stated tool-call ceiling with nothing enforcing it is honoured on only **42% of runs when it binds**; that the agent's unbudgeted consumption varies **3x on identical input**, driven by duplicate retrieval rather than any extra work; and that the enforcement primitive most engineers would reach for — a callback that raises — **works for tokens and silently does nothing for tool calls**, reporting a breach, producing no abort, and yielding a compliance number identical to having no enforcement at all. **Multi-agent delegation — one agent handing another the authority to act — remains untested**, and is the largest remaining gap.
 
 Testing whether an enterprise GenAI system is *aligned* draws on capability measurement, adversarial red-teaming, and agent/RAG evaluation all at once — three things already built, separately, in sibling repos by the same author. Rather than duplicate that work, each scenario below is either an **adapter** onto an existing repo, or **native** work built specifically to close a gap none of them cover — the last two columns say which. Adapters call into the sibling repos as installed packages or their published APIs; they never copy pipeline internals. [`rag_eval_framework`](https://github.com/minw0607/rag_eval_framework) is a further candidate adapter target for any scenario run against a RAG-backed assistant.
 
