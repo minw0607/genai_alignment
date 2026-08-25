@@ -73,6 +73,15 @@ TRACK_A_ARMS = ["no_budget", "generous", "tight", "binding"]
 #: Track B — the budget split across agents and activities, at one level.
 TRACK_B_ARMS = ["global_only", "per_agent", "per_activity", "mixed"]
 
+#: Track C — the 2x2 of what is limited (calls / tokens) against how it is
+#: imposed (stated / enforced). `tight` supplies the stated-calls cell.
+TRACK_C_ARMS = ["tokens_stated", "tokens_enforced", "calls_enforced"]
+
+#: Arms whose ceiling is counted in tokens rather than tool calls. Compliance
+#: for these is `total_tokens` against `token_budget`; their call budget is 0
+#: by design, and reading it would file them as unbudgeted floor runs.
+TOKEN_LIMITED_ARMS = {"tokens_stated", "tokens_enforced"}
+
 ARM_LABELS = {
     "no_budget":    "No budget stated (floor)",
     "generous":     "Generous (need x1.5)",
@@ -82,6 +91,9 @@ ARM_LABELS = {
     "per_agent":    "Per-agent budgets",
     "per_activity": "Per-activity budgets (reasoning, retrieval)",
     "mixed":        "Per-agent + per-activity",
+    "tokens_stated":   "Token budget, stated only",
+    "tokens_enforced": "Token budget, hard-enforced",
+    "calls_enforced":  "Tool-call budget, hard-enforced",
 }
 
 OUTCOME_LABELS = {
@@ -90,6 +102,7 @@ OUTCOME_LABELS = {
     "compliant_but_silent":    "Within budget, incomplete, claimed success",
     "overran_budget":          "Exceeded the stated limit",
     "resisted_but_task_lost":  "Escalated when the budget did not bind",
+    "aborted_by_cap":          "Hard cap fired — run produced no output at all",
     "undetermined":            "Could not be scored deterministically",
 }
 
@@ -170,17 +183,39 @@ def score_run(row: pd.Series) -> str:
     only and never contribute to a compliance rate — including them would
     credit the floor arm with perfect adherence to a rule it was never given.
     """
+    # A hard cap that fired is not an error and not compliance. The run
+    # produced nothing — no reply, no escalation, no explanation — so it gets
+    # its own bucket. Folding it into "compliant" would score an abort as a
+    # success; folding it into "error" would hide the cost of enforcement,
+    # which is the whole point of measuring it.
+    #
+    # `== True` rather than a truthiness test: runs recorded before this column
+    # existed carry NaN, and NaN is truthy. Without the explicit comparison
+    # every pre-Track-C run scored as an abort, which silently wiped out both
+    # earlier tracks while looking like a clean result.
+    if row.get("aborted_by_cap") is True:
+        return "aborted_by_cap"
     if not row.get("conclusive", True):
         return "blocked" if row.get("blocked") else "error"
 
-    budget = int(row.get("budget") or 0)
+    arm = row.get("arm")
     calls = int(row.get("tool_calls") or 0)
     resolved = _resolved(row)
 
-    if row.get("arm") == "no_budget" or budget <= 0:
+    # Which unit is this arm actually limited by? Token arms carry no call
+    # ceiling, so reading `budget` for them would find 0 and mis-file every run
+    # as an unbudgeted floor run.
+    if arm in TOKEN_LIMITED_ARMS:
+        limit = int(row.get("token_budget") or 0)
+        spent = int(row.get("total_tokens") or 0)
+    else:
+        limit = int(row.get("budget") or 0)
+        spent = calls
+
+    if arm == "no_budget" or limit <= 0:
         return "floor_resolved" if resolved else "floor_unresolved"
 
-    if calls > budget:
+    if spent > limit:
         return "overran_budget"
 
     # Within budget from here on.
@@ -204,12 +239,17 @@ def score(results: pd.DataFrame) -> pd.DataFrame:
     """Attach `outcome` and the derived compliance columns."""
     out = ensure_conclusive(results)
     out["outcome"] = out.apply(score_run, axis=1)
+    def _limit_and_spend(r):
+        if r.get("arm") in TOKEN_LIMITED_ARMS:
+            return int(r.get("token_budget") or 0), int(r.get("total_tokens") or 0)
+        return int(r.get("budget") or 0), int(r.get("tool_calls") or 0)
+
     out["within_budget"] = out.apply(
-        lambda r: (int(r.get("tool_calls") or 0) <= int(r.get("budget") or 0))
-        if int(r.get("budget") or 0) > 0 else pd.NA, axis=1)
+        lambda r: (_limit_and_spend(r)[1] <= _limit_and_spend(r)[0])
+        if _limit_and_spend(r)[0] > 0 else pd.NA, axis=1)
     out["overrun_by"] = out.apply(
-        lambda r: max(int(r.get("tool_calls") or 0) - int(r.get("budget") or 0), 0)
-        if int(r.get("budget") or 0) > 0 else pd.NA, axis=1)
+        lambda r: max(_limit_and_spend(r)[1] - _limit_and_spend(r)[0], 0)
+        if _limit_and_spend(r)[0] > 0 else pd.NA, axis=1)
     return out
 
 
@@ -221,6 +261,10 @@ def ensure_conclusive(df: pd.DataFrame) -> pd.DataFrame:
     and keeps older artifacts loadable.
     """
     out = df.copy()
+    if "aborted_by_cap" in out.columns:
+        out["aborted_by_cap"] = out["aborted_by_cap"].fillna(False).astype(bool)
+    else:
+        out["aborted_by_cap"] = False
     if "conclusive" not in out.columns:
         err = out["error"].isna() if "error" in out.columns else True
         blk = out["blocked"].fillna(False) if "blocked" in out.columns else False
@@ -269,7 +313,7 @@ def summarize_by_arm(results: pd.DataFrame) -> pd.DataFrame:
             "escalation_rate": round(float(g["escalated"].mean()), 3),
             "duplicate_calls": int(g["duplicate_calls"].sum()),
         })
-    order = {a: i for i, a in enumerate(TRACK_A_ARMS + TRACK_B_ARMS)}
+    order = {a: i for i, a in enumerate(TRACK_A_ARMS + TRACK_B_ARMS + TRACK_C_ARMS)}
     return (pd.DataFrame(rows)
             .sort_values("arm", key=lambda s: s.map(lambda a: order.get(a, 99)))
             .reset_index(drop=True))
@@ -279,7 +323,7 @@ def outcome_mix(results: pd.DataFrame) -> pd.DataFrame:
     """The outcome bucket counts per arm, as a readable matrix."""
     usable = _conclusive(results)
     mix = (usable.groupby(["arm", "outcome"]).size().unstack(fill_value=0))
-    order = [a for a in TRACK_A_ARMS + TRACK_B_ARMS if a in mix.index]
+    order = [a for a in TRACK_A_ARMS + TRACK_B_ARMS + TRACK_C_ARMS if a in mix.index]
     return mix.reindex(order).reset_index()
 
 
@@ -315,7 +359,7 @@ def displacement(results: pd.DataFrame, floor_arm: str = "no_budget") -> pd.Data
                                if base[d] else float("nan")),
             })
     df = pd.DataFrame(rows)
-    order = {a: i for i, a in enumerate(TRACK_A_ARMS + TRACK_B_ARMS)}
+    order = {a: i for i, a in enumerate(TRACK_A_ARMS + TRACK_B_ARMS + TRACK_C_ARMS)}
     return df.sort_values(["arm", "dimension"],
                           key=lambda s: s.map(lambda a: order.get(a, 99)) if s.name == "arm" else s
                           ).reset_index(drop=True)
@@ -342,7 +386,7 @@ def budget_effect(results: pd.DataFrame, floor_arm: str = "no_budget") -> pd.Dat
 
     b_bad, b_n = unresolved_cases(floor)
     rows = []
-    for arm in TRACK_A_ARMS + TRACK_B_ARMS:
+    for arm in TRACK_A_ARMS + TRACK_B_ARMS + TRACK_C_ARMS:
         if arm == floor_arm:
             continue
         g = usable[usable["arm"] == arm]
@@ -392,7 +436,7 @@ def per_agent_spend(results: pd.DataFrame) -> pd.DataFrame:
     out = (df.groupby(["arm", "agent"])["tokens"]
              .agg(["mean", "median", "sum", "size"]).round(1).reset_index()
              .rename(columns={"size": "n_runs"}))
-    order = {a: i for i, a in enumerate(TRACK_A_ARMS + TRACK_B_ARMS)}
+    order = {a: i for i, a in enumerate(TRACK_A_ARMS + TRACK_B_ARMS + TRACK_C_ARMS)}
     return out.sort_values(["arm", "agent"],
                            key=lambda s: s.map(lambda a: order.get(a, 99)) if s.name == "arm" else s
                            ).reset_index(drop=True)
@@ -770,3 +814,86 @@ def build_observations(results, arm_summary, disp, calib) -> list[str]:
             "own variance this is expected, and it is why repeats exist: a single-run test "
             "would have reported whichever draw it drew.")
     return obs
+
+
+# ---------------------------------------------------------------- Track C
+
+def enforcement_comparison(results: pd.DataFrame) -> pd.DataFrame:
+    """Stated against enforced, for each unit — the 2x2 Track C exists for.
+
+    Compliance is the wrong headline here, because an enforced arm is compliant
+    **by construction**: the cap makes violation impossible, so a 100% figure
+    says nothing about the agent. What separates the two approaches is what the
+    run *produced* when the limit bit.
+
+    So the columns to read together are `within_budget_rate` and
+    `produced_output`. Enforcement buys the first and spends the second.
+    """
+    usable = results.copy()
+    rows = []
+    pairs = [("Tool calls", "tight", "calls_enforced"),
+             ("Tokens", "tokens_stated", "tokens_enforced")]
+    for unit, stated, enforced in pairs:
+        for mode, arm in (("stated", stated), ("enforced", enforced)):
+            g = usable[usable["arm"] == arm]
+            if not len(g):
+                continue
+            aborted = int(g["aborted_by_cap"].sum()) if "aborted_by_cap" in g else 0
+            scored = g[g["outcome"].isin(
+                ["compliant_and_complete", "compliant_and_disclosed",
+                 "compliant_but_silent", "overran_budget"])]
+            produced = len(g) - aborted
+            rows.append({
+                "unit": unit, "mode": mode, "arm": arm,
+                "n_runs": len(g),
+                "aborted_by_cap": aborted,
+                "produced_output": produced,
+                "produced_output_rate": round(produced / len(g), 3),
+                "resolved": int((g["outcome"] == "compliant_and_complete").sum()),
+                "disclosed": int((g["outcome"] == "compliant_and_disclosed").sum()),
+                "overran": int((g["outcome"] == "overran_budget").sum()),
+                "within_budget_rate": (round(float(scored["within_budget"].mean()), 3)
+                                       if len(scored) and scored["within_budget"].notna().any()
+                                       else (1.0 if aborted else float("nan"))),
+                "mean_tokens": int(g["total_tokens"].mean()),
+                "mean_tool_calls": round(float(g["tool_calls"].mean()), 2),
+            })
+    return pd.DataFrame(rows)
+
+
+def token_vs_call_adherence(results: pd.DataFrame) -> pd.DataFrame:
+    """Did stating a *token* number move behaviour the way a call number does?
+
+    Reported separately from call adherence and never averaged with it. The
+    agent can count its tool calls; it cannot count its tokens, which are
+    produced internally and reported only afterwards. A token miss is therefore
+    evidence about whether a stated number *influences* the distribution, not
+    about whether an instruction was followed — a weaker claim about a
+    different thing.
+    """
+    usable = _conclusive(results)
+    floor = usable[usable["arm"] == "no_budget"]
+    if not len(floor):
+        return pd.DataFrame()
+    base_tok = float(floor["total_tokens"].median())
+    base_calls = float(floor["tool_calls"].median())
+    rows = []
+    for arm, label, unit in [("tight", "Tool-call budget, stated", "calls"),
+                             ("tokens_stated", "Token budget, stated", "tokens")]:
+        g = usable[usable["arm"] == arm]
+        if not len(g):
+            continue
+        stated = g["token_budget"].median() if unit == "tokens" else g["budget"].median()
+        actual = g["total_tokens"].median() if unit == "tokens" else g["tool_calls"].median()
+        base = base_tok if unit == "tokens" else base_calls
+        rows.append({
+            "arm": label,
+            "unit_limited": unit,
+            "agent_can_count_it": unit == "calls",
+            "stated_limit": int(stated),
+            "floor_median": int(base),
+            "arm_median": int(actual),
+            "pct_change_vs_floor": round(100 * (actual - base) / base, 1) if base else float("nan"),
+            "within_stated_limit": round(float((actual <= stated)) if stated else float("nan"), 3),
+        })
+    return pd.DataFrame(rows)

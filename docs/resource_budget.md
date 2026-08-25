@@ -379,6 +379,56 @@ The displacement instrument is demonstrably working — it detected the intended
 
 ---
 
+<a id="track-c--stated-versus-enforced-and-tokens-versus-calls"></a>
+
+## Track C — stated versus enforced, tokens versus calls
+
+Track A states a limit and hopes. Track C asks what happens when you actually try to *impose* one, across both units:
+
+| | **Stated** (prompt only) | **Enforced** (callback) |
+|---|---|---|
+| **Tool calls** | `tight` | `calls_enforced` |
+| **Tokens** | `tokens_stated` | `tokens_enforced` |
+
+### Results
+
+| Arm | Within budget | Overran | Aborted | Produced output | Resolved |
+|---|---|---|---|---|---|
+| Tool calls, stated | 57.8% | 19 | 0 | 100% | 21 |
+| **Tool calls, enforced** | **55.6%** | **20** | **0** | 100% | 24 |
+| Tokens, stated | 86.7% | 6 | 0 | 100% | 39 |
+| **Tokens, enforced** | **100%** | **0** | **8** | **82.2%** | 35 |
+
+### The mechanism finding: enforcement works for tokens and not for tool calls
+
+**Token enforcement works.** Eight runs hit the ceiling and were stopped: zero overruns, 100% compliance by construction. It cost 18% of runs producing *nothing at all* — no reply, no escalation, no explanation to the customer.
+
+**Tool-call enforcement does not work**, and the numbers are indistinguishable from merely stating the limit: 55.6% against 57.8%, 20 overruns against 19, zero aborts. The callback counted correctly and raised correctly — and the agent kept going.
+
+The cause is the callback hook, not the budget. Verified directly: with a ceiling of 1 and no self-limiting instruction, the enforcer tripped at call 2, the breach was recorded in the run's errors, **and the run completed with the agent continuing.** A `BudgetExceeded` raised from `on_llm_end` halts the run; the same exception raised from `on_tool_start` is absorbed downstream and the agent carries on.
+
+**So the enforcement primitive most people would reach for is unit-dependent, and silently so.** It reports a breach, produces no abort, and yields a compliance number identical to having no enforcement at all. Anyone building a tool-call cap this way would believe it was working.
+
+### Two traps on the way to a working enforcer
+
+Both cost a full sweep and are worth stating, because neither is documented where you would look:
+
+1. **LangChain swallows exceptions raised in callbacks by default.** A cap built the obvious way counts, logs `Error in ... callback`, and stops nothing — a 500-token ceiling let a run reach 7,395 tokens. `raise_error = True` on the handler is required.
+2. **Config bound with `.with_config()` does not reach inside a compiled LangGraph agent.** An enforcer attached that way saw 1,532 of 6,904 tokens and 0 of 4 tool calls — under-counting by 78% *while reporting full compliance*. Callbacks have to be passed at invoke time, which is what `run_support_mas(extra_callbacks=...)` upstream is for.
+
+The first sweep of this track ran through a broken enforcer and reported zero aborts across 135 runs while 32 of them breached their ceiling. It was discarded and re-run.
+
+### Stating a token number moved behaviour more than stating a call number
+
+| Stated limit | Agent can count it? | Median vs unbudgeted floor |
+|---|---|---|
+| 10 tool calls | **yes** | −20% |
+| 13,500 tokens | **no** | **−30.9%** |
+
+The agent cannot track its own token consumption — tokens are produced internally and reported only afterwards — yet the token budget moved the median further. Whatever a stated number does here, it is not the agent counting and stopping. Reported as a separate and weaker claim than call adherence, and never averaged with it.
+
+---
+
 ## Relationship to the rest of the library
 
 | Scenario | Question | Attacker |

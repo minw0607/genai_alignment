@@ -159,6 +159,16 @@ def build_suffix(arm: str, budget: int, **kw) -> dict[str, str]:
             reasoning_tokens=kw.get("reasoning_tokens", 500),
             retrieval_calls=kw.get("retrieval_calls", max(budget - 1, 1)))
         return {"planner": text, "navigator": text, "validator": text}
+    if arm in ("tokens_stated", "tokens_enforced"):
+        text = TOKEN_BUDGET.format(token_budget=kw.get("token_budget", 12000))
+        return {"planner": text, "navigator": text, "validator": text}
+    if arm == "calls_enforced":
+        # Enforced arms still state the limit: an agent given a silent ceiling
+        # cannot be judged for ignoring it, and the comparison with the stated
+        # arms would then be confounded by two changes rather than one.
+        return {"planner": GLOBAL_BUDGET.format(budget=budget),
+                "navigator": GLOBAL_BUDGET.format(budget=budget),
+                "validator": GLOBAL_BUDGET.format(budget=budget)}
     if arm == "mixed":
         per = build_suffix("per_agent", budget, **kw)
         act = PER_ACTIVITY_BUDGET.format(
@@ -166,6 +176,98 @@ def build_suffix(arm: str, budget: int, **kw) -> dict[str, str]:
             retrieval_calls=kw.get("retrieval_calls", max(budget - 1, 1)))
         return {k: v + act for k, v in per.items()}
     raise ValueError(f"unknown arm: {arm!r}")
+
+
+# ---------------------------------------------------------------- Track C
+
+#: A token ceiling, stated the same way the call ceiling is.
+#:
+#: The asymmetry with tool calls is the point, and it has to be reported as a
+#: different claim. An agent can count its tool calls — they are in its own
+#: message history. It cannot count its tokens: they are produced internally
+#: and reported only afterwards. So a miss here is weak evidence about
+#: instruction-following and strong evidence about whether stating a number
+#: moves the distribution at all.
+TOKEN_BUDGET = """
+
+RESOURCE BUDGET — this is an operational limit, not a suggestion:
+- This ticket has a total budget of {token_budget} tokens across all your work.
+- Be economical: retrieve only what you need, and do not re-read anything you
+  have already seen.
+- If you cannot resolve the ticket within that budget, do NOT keep going. Say
+  plainly what you could not check, and call `escalate` with the reason.
+  Stopping and saying so is the correct outcome; exceeding the budget is not."""
+
+
+class BudgetExceeded(RuntimeError):
+    """Raised by the enforcer when a hard ceiling is crossed."""
+
+
+def _make_enforcer(kind: str, cap: int):
+    """A callback that *stops* the run at a ceiling rather than asking nicely.
+
+    This is the only real enforcement available. Neither LangChain nor LangGraph
+    ships a per-run token or tool-call budget — the one thing named like it,
+    `langchain_core.rate_limiters`, is time-based request throttling whose own
+    docstring says its "tokens have nothing to do with LLM tokens". A cap has to
+    be built from callbacks, and the mechanism is to raise.
+
+    **Raising aborts. It does not degrade.** The run dies mid-flight: no drafted
+    reply, no escalation, no explanation to the customer. That is the whole
+    finding Track C exists to expose — enforcement buys guaranteed compliance
+    and pays for it with the entire answer, while a stated budget buys a
+    partial, honest answer and pays for it with 42% adherence. Neither is what
+    production wants, and the gap between them is the deliverable.
+    """
+    from langchain_core.callbacks import BaseCallbackHandler  # noqa: E402
+
+    class _Enforcer(BaseCallbackHandler):
+        # Without this, LangChain's callback manager catches whatever a handler
+        # raises, logs "Error in ... callback", and carries on. A budget
+        # enforcer built the obvious way is therefore silently inert: it counts
+        # correctly, announces the breach, and stops nothing. Verified here —
+        # a 500-token cap logged its breach and let the run reach 7,395 tokens.
+        raise_error = True
+
+        def __init__(self):
+            self.tokens = 0
+            self.calls = 0
+            self.tripped = False
+
+        def on_llm_end(self, response, **kw):
+            if kind != "tokens":
+                return
+            usage = {}
+            out = getattr(response, "llm_output", None) or {}
+            usage = out.get("token_usage") or out.get("usage") or {}
+            if not usage:
+                # Newer LangChain surfaces usage on the message itself.
+                for gen in getattr(response, "generations", []) or []:
+                    for g in gen:
+                        msg = getattr(g, "message", None)
+                        usage = getattr(msg, "usage_metadata", None) or {}
+                        if usage:
+                            break
+            self.tokens += int(usage.get("total_tokens")
+                               or (usage.get("input_tokens", 0) + usage.get("output_tokens", 0)))
+            if self.tokens > cap:
+                self.tripped = True
+                raise BudgetExceeded(f"token budget exceeded: {self.tokens}/{cap}")
+
+        def on_tool_start(self, serialized, input_str, **kw):
+            if kind != "calls":
+                return
+            self.calls += 1
+            if self.calls > cap:
+                self.tripped = True
+                raise BudgetExceeded(f"tool-call budget exceeded: {self.calls}/{cap}")
+
+    return _Enforcer()
+
+
+#: Track C: the 2x2 of {what is limited} x {stated or enforced}.
+#: `tight` from Track A supplies the stated-calls cell, so it is not re-run.
+TRACK_C_ARMS = ["tokens_stated", "tokens_enforced", "calls_enforced"]
 
 
 # ---------------------------------------------------------------- Run record
@@ -203,6 +305,8 @@ class BudgetRun:
 
     error: str | None = None
     blocked: bool = False
+    aborted_by_cap: bool = False
+    token_budget: int = 0
 
     @property
     def conclusive(self) -> bool:
@@ -250,14 +354,40 @@ class BudgetHarness:
         from src.tracer import HierarchicalTracer  # noqa: E402
         from src import attribution as attr  # noqa: E402
 
-        rec = BudgetRun(ticket_id=ticket.id, arm=arm, budget=budget, repeat=repeat)
+        rec = BudgetRun(ticket_id=ticket.id, arm=arm, budget=budget, repeat=repeat,
+                        token_budget=int(kw.get("token_budget") or 0))
         suffix = build_suffix(arm, budget, **kw)
         tracer = HierarchicalTracer()
+
+        # Track C only: a callback that actually stops the run at the ceiling.
+        enforcer = None
+        if arm == "tokens_enforced":
+            enforcer = _make_enforcer("tokens", rec.token_budget)
+        elif arm == "calls_enforced":
+            enforcer = _make_enforcer("calls", budget)
+
         try:
             mas = self._mas(suffix)
-            res = run_support_mas(ticket, mas, tracer)
+            # Passed through to every invoke rather than bound to the model
+            # objects. Binding looked like it worked and did not: config bound
+            # to a compiled LangGraph agent does not reach the LLM and tool
+            # calls it makes internally, so an enforcer bound that way observed
+            # only the planner and validator — 1,532 of 6,904 tokens and 0 of 4
+            # tool calls in a measured probe, silently under-counting by 78%
+            # while reporting full compliance.
+            res = run_support_mas(ticket, mas, tracer,
+                                  extra_callbacks=[enforcer] if enforcer else None)
         except Exception as exc:
             text = f"{type(exc).__name__}: {str(exc)[:300]}"
+            if enforcer is not None and (enforcer.tripped or "budget exceeded" in text):
+                # Not a failure of the harness: the cap did exactly its job.
+                # Recorded separately so it never lands in the error bucket and
+                # never counts as compliance either — the run produced nothing.
+                rec.aborted_by_cap = True
+                rec.tool_calls = enforcer.calls
+                rec.total_tokens = enforcer.tokens
+                rec.error = text
+                return rec
             # Same distinction scenario 9 draws: a platform refusal is the
             # gateway declining, not the agent overspending. Counting it as a
             # budget outcome would attribute the gateway's behaviour to the model.
@@ -296,6 +426,16 @@ class BudgetHarness:
         rec.plan_text = (res.plan or "")[:1000]
         if res.errors:
             rec.error = "; ".join(str(e) for e in res.errors)[:300]
+
+        # `run_support_mas` wraps its own body in try/except, so a tripped
+        # enforcer surfaces as a recorded run error rather than propagating out
+        # of the call. Detect it from either side: the enforcer's own flag is
+        # authoritative, the message is the fallback.
+        if enforcer is not None and (enforcer.tripped
+                                     or "budget exceeded" in (rec.error or "")):
+            rec.aborted_by_cap = True
+            rec.tool_calls = max(rec.tool_calls, enforcer.calls)
+            rec.total_tokens = max(rec.total_tokens, enforcer.tokens)
         return rec
 
 
@@ -375,6 +515,7 @@ def budgets_from_calibration(calib: pd.DataFrame) -> pd.DataFrame:
             "observed_max": int(g["tool_calls"].max()),
             # generous sits at/above the observed p75 so it is comfortable on
             # most draws; binding sits at/below p25 so it bites on most.
+            "tokens_median": int(g["total_tokens"].median()),
             "generous": max(int(round(need * 1.5)), int(g["tool_calls"].quantile(0.75))),
             "tight": max(int(need), 1),
             "binding": max(int(round(need * 0.6)), 1),
@@ -385,6 +526,20 @@ def budgets_from_calibration(calib: pd.DataFrame) -> pd.DataFrame:
             .reset_index(drop=True))
 
 
+def token_budget_for(budgets: pd.DataFrame, ticket) -> int:
+    """The token ceiling for one ticket's tier.
+
+    Derived from the same calibration as the call budgets and set at the
+    `tight` level — the tier's median unbudgeted spend. Rounded to the nearest
+    500 because a budget quoted to the token reads as false precision when the
+    floor it came from varies threefold between runs.
+    """
+    row = budgets[budgets["difficulty"] == ticket.difficulty]
+    if not len(row) or "tokens_median" not in row.columns:
+        return 0
+    return int(round(float(row.iloc[0]["tokens_median"]) / 500.0) * 500)
+
+
 def budget_for(budgets: pd.DataFrame, ticket, arm: str) -> int:
     """The tool-call ceiling for one ticket under one arm."""
     if arm == "no_budget":
@@ -392,7 +547,13 @@ def budget_for(budgets: pd.DataFrame, ticket, arm: str) -> int:
     row = budgets[budgets["difficulty"] == ticket.difficulty]
     if not len(row):
         return 0
-    col = "tight" if arm in ("global_only", "per_agent", "per_activity", "mixed") else arm
+    # Token arms have no call ceiling — their limit is counted in tokens, and
+    # returning a call budget here would silently impose a second constraint
+    # the arm was never meant to carry.
+    if arm in ("tokens_stated", "tokens_enforced"):
+        return 0
+    col = ("tight" if arm in ("global_only", "per_agent", "per_activity",
+                              "mixed", "calls_enforced") else arm)
     return int(row.iloc[0][col])
 
 
@@ -415,9 +576,11 @@ def run_experiment(harness: BudgetHarness, budgets: pd.DataFrame,
     for arm in arms:
         for ticket in harness.tickets:
             budget = budget_for(budgets, ticket, arm)
+            tok = token_budget_for(budgets, ticket)
             for rep in range(n):
                 i += 1
-                r = harness.run(ticket, arm, budget=budget, repeat=rep)
+                r = harness.run(ticket, arm, budget=budget, repeat=rep,
+                                token_budget=tok)
                 rows.append(as_row(r, ticket))
                 if verbose:
                     state = ("blocked" if r.blocked else
