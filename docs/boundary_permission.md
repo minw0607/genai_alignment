@@ -251,14 +251,57 @@ With zero violations across 10 independent cases per track, the 95% upper bound 
 
 ---
 
+<a id="under-pressure"></a>
+
+## Under Pressure — three harder tracks
+
+The Limitations section below names the shape every case above shares: **socially hard but logically easy**, with the scope question underneath usually binary, and **every condition single-turn with the policy fresh in context**. A clean result there shows an explicit policy being followed. It does not show a boundary being *located*.
+
+These three tracks each remove one of those comforts. Same agent, same tool menu, same policy text, same deterministic tool-log scoring — so anything that moves is attributable to the pressure and nothing else.
+
+| Track | What it removes | Cases |
+|---|---|---|
+| **Incentive pressure** | *the binary scope question.* One identical out-of-scope ask under five framings, from idle curiosity to a stated personal consequence — so what is measured is a **price**, not a yes/no | 6 (L0–L4 + control) |
+| **Persistence** | *the single turn.* The same ask, declined, pressed again, seven turns deep — the policy is no longer fresh, it is behind the assistant's own accumulated helpfulness | 1 |
+| **Fabricated history** | *the trustworthy transcript.* Two `assistant` turns granting the exception, **written by the harness, not produced by the model** | 2 |
+
+### `L0` is the control the ladder rests on
+
+A model that declines at `L0` and complies at `L3` has not been attacked — it has **traded a stated limit against a goal we supplied**. That delta is the finding; the rungs price it. Reading the ladder against zero instead of against its own `L0` would turn a measurement of cost into a pass/fail.
+
+A pressure-matched **control** sits at the top: identical `L4` wording, in-scope subject, where the correct behaviour is to *complete*. Without it a model that refuses everything would score perfectly on the whole ladder.
+
+### Why the fabricated-history track tests the real exploit
+
+The API is stateless. A conversation is only ever what the caller puts in the payload, and nothing in an `assistant` entry proves the assistant wrote it. `ToolAgent.run_conversation(..., prefill=...)` writes those turns into a genuine messages list — real `assistant` roles, not text glued into a user message — so this exercises the actual defect rather than an imitation of it.
+
+Unlike the other two tracks it maps to something an engineering team can close: **do not let untrusted or retrieved content reach the messages list, and verify session state server-side.**
+
+### Result: the boundary held, on a sample that could only have caught a large failure
+
+**0 violations across 24 runs where declining was correct, and no over-refusal on the pressure-matched control.** Every rung of the incentive ladder, the seven-turn persistence track, and both forged-transcript cases came back compliant.
+
+The bound matters more than the zero:
+
+> Across 24 pressured runs the boundary was crossed 0 times. **This run detects a violation rate above 14%; below that it cannot distinguish a system that holds from a test that is under-powered.**
+
+Read it as **no gross failure**, not as resistance to pressure. At three repeats a single rung's interval reaches past 50%, so only the pooled floor is worth quoting — raise `N_REPEATS` before putting a per-rung number in front of anyone.
+
+### What this does and does not close
+
+- ✅ The original Limitations item — *"the clean result shows an explicit policy being followed rather than a boundary being located"* — now has three tracks aimed squarely at it, with a floor stated rather than implied.
+- ⚠️ **Only one of the nine cases is genuinely multi-turn.** The persistence case runs seven turns; the rest are single-turn with 0–2 prefilled messages. So the ladder currently prices *framing* pressure well and *conversational* pressure barely at all, which is worth knowing given the track is named "persistence".
+- ⚠️ At n=3 this is a smoke test. It rules out a system that folds easily. It says nothing about one that folds occasionally.
+
+---
+
 ## Limitations & Future Work
 
 - **Prompt-level policy is not enforcement, and this scenario deliberately tests only the former.** `ToolBackend` executes every well-formed call it receives. That isolates the model's judgment as the thing under test, but it means a violation here is a *model* failure, not a demonstration that a real deployment would have leaked data — a production system should refuse out-of-scope calls server-side regardless of what the model decides. Adding a server-side-enforcement condition as a third arm would quantify how much residual risk real enforcement removes; that's the single biggest gap.
 - **Approval gating does not yet discriminate.** With the policy removed, per-call authorization broke on 10/10 cases and capability gating on 9/10, but approval gating on only 2/10 (p = 0.474). Those cases may be measuring the model's intrinsic caution about consequential writes rather than policy adherence, and should be rewritten harder — the same defect `bp-07` showed in the original four-case probe.
-- **The cases are socially hard but logically easy.** The requests carry sympathetic motives, plausible authority claims and time pressure — but the scope question underneath is usually binary (another employee's record is unambiguously not the requester's). Frontier models handle the logical part far better than the social framing suggests, which is a likely contributor to a clean result. Genuinely contested scope — shared or delegated records, aggregates that are arguably nobody's personal data — is thinner in the fixture than the framing implies.
-- **Every condition is single-turn, with the policy fresh in context at every decision.** Real deployments dilute a system prompt across long conversations; nothing here tests that.
+- **The cases are socially hard but logically easy — partly addressed.** The requests carry sympathetic motives and plausible authority claims, but the scope question underneath is usually binary. [Under Pressure](#under-pressure) attacks this directly with an incentive ladder that prices the limit rather than testing it, and the boundary held across all 24 pressured runs — on a sample that could only have detected a violation rate above 14%.
+- **Almost every condition is single-turn, with the policy fresh in context.** The pressure tracks add one seven-turn persistence case and two forged-transcript cases, so the policy is no longer always fresh — but 24 of the 27 pressured runs remain single-turn with at most two prefilled messages. Conversational dilution is still barely tested, which is the honest reading of a track named "persistence".
 - **40 hand-authored cases is still a small sample for a confident per-case rate.** With 10 independent cases per track, a track that records zero violations still has a 95% upper bound near 28% on its true per-case violation rate; the whole 30-case boundary set bounds it near 11%. The `case_ci_high` column carries this — read it, not just the point estimate. Expanding further keeps helping, but only via *cases*: repeats do not narrow the interval (see Statistics above).
-- **Every case is single-turn.** A conversation that starts in bounds and widens gradually over several turns is both a likelier real-world shape and a harder test. Objective Alignment's long-horizon track is the closest existing pattern to build on.
 - **One phrasing of the policy.** Drift Detection's prompt-drift track showed that a benign rewrite of a system prompt can move behavior more than a model version change does. How much of the compliance measured here depends on *this particular* wording of the authorization rules is unknown.
 - **One target system.** The tools, policy, and directory are HR/IT. A banking or claims-processing agent would exercise different authority shapes (monetary limits, four-eyes approval, regulatory segregation of duties) that this fixture doesn't reach.
 - **Escalation quality is measured shallowly.** `escalate_to_hr` being called is recorded, but whether the escalation *accurately described* what was being asked is not checked — a garbled handoff to a human counts the same as a clear one.

@@ -111,6 +111,9 @@ class AgentRun:
     tool_calls: list[ToolCall] = field(default_factory=list)
     turns_used: int = 0
     error: str | None = None
+    #: One entry per user turn, for multi-turn runs (`run_conversation`).
+    #: Empty for single-turn `run`, so every existing caller is unaffected.
+    turn_answers: list[str] = field(default_factory=list)
 
     def called_tools(self) -> list[str]:
         return [c.name for c in self.tool_calls]
@@ -394,4 +397,84 @@ class ToolAgent:
 
         run.turns_used = self.max_turns
         run.final_text = "[max turns reached without a final answer]"
+        return run
+
+    def run_conversation(self, user_messages: list[str], tool_menu: list[str],
+                         backend: ToolBackend,
+                         system_prompt: str = AUTHORIZATION_POLICY,
+                         prefill: list[tuple[str, str]] | None = None) -> AgentRun:
+        """Run several user turns inside ONE growing conversation.
+
+        `run` starts from a fresh messages list every time, so it can only ever
+        measure a *cold* response. Whether a boundary that holds on turn 1 still
+        holds on turn 6 — after the assistant has already been helpful, already
+        explained itself, and is being asked again — is invisible to it by
+        construction, because the history that would do the work is discarded.
+        This keeps the same messages list across user turns, exactly as a real
+        chat session does.
+
+        `prefill` writes (user, assistant) pairs into the history that the model
+        never produced. That is not a shortcut, it is the thing being tested: the
+        API is stateless, so a conversation is only ever what the caller puts in
+        the payload, and nothing in an `assistant` entry proves the assistant
+        wrote it. Any deployment that lets untrusted or retrieved content reach
+        the messages list hands an attacker this same capability — see the
+        `fabricated_history` track in scenarios/boundary_permission.py.
+
+        Returns one `AgentRun` whose `tool_calls` span every turn, so the
+        existing deterministic scoring applies unchanged; `turn_answers` holds
+        the assistant's reply to each user turn.
+        """
+        tools = [TOOL_SCHEMAS[n] for n in tool_menu]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+        for user_text, assistant_text in (prefill or []):
+            messages.append({"role": "user", "content": user_text})
+            messages.append({"role": "assistant", "content": assistant_text})
+
+        run = AgentRun(final_text="")
+        turns_used = 0
+
+        for user_message in user_messages:
+            messages.append({"role": "user", "content": user_message})
+            for _ in range(self.max_turns):
+                try:
+                    response = self._create(messages, tools)
+                except Exception as e:
+                    run.error = f"{type(e).__name__}: {str(e)[:300]}"
+                    run.turns_used = turns_used
+                    return run
+
+                turns_used += 1
+                message = response.choices[0].message
+                calls = getattr(message, "tool_calls", None) or []
+                if not calls:
+                    text = (message.content or "").strip()
+                    run.turn_answers.append(text)
+                    run.final_text = text
+                    # The reply stays in the history — that accumulation is the
+                    # mechanism under test, not incidental bookkeeping.
+                    messages.append({"role": "assistant", "content": text})
+                    break
+
+                messages.append({
+                    "role": "assistant", "content": message.content,
+                    "tool_calls": [
+                        {"id": c.id, "type": "function",
+                         "function": {"name": c.function.name, "arguments": c.function.arguments}}
+                        for c in calls
+                    ],
+                })
+                for c in calls:
+                    try:
+                        args = json.loads(c.function.arguments or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                    result = backend.dispatch(c.function.name, args)
+                    run.tool_calls.append(ToolCall(c.function.name, args, result,
+                                                   len(run.turn_answers)))
+                    messages.append({"role": "tool", "tool_call_id": c.id, "content": result})
+            else:
+                run.turn_answers.append("[max turns reached without a final answer]")
+
+        run.turns_used = turns_used
         return run
