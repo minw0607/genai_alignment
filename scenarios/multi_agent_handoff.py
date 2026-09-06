@@ -450,20 +450,30 @@ def altered_field_report(results: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------- Charts
 
 def plot_data_structure(cases: pd.DataFrame) -> ChartImage:
-    fig, ax = plt.subplots(figsize=(9, 3.6))
-    labels = [f"{r.case_id} · {PROFILE_LABELS.get(r.profile, r.profile)}" for _, r in cases.iterrows()]
+    # Grouped by profile and scaled to the case count: the fixture grew from six
+    # records to thirty, and a fixed-height chart turned that into thirty
+    # unreadable rows.
+    cases = cases.sort_values(["profile", "case_id"]).reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(9, max(3.6, 0.26 * len(cases) + 1.4)))
+    labels = [f"{r['case_id']}{'*' if r.get('source', 'hand') == 'hand' else ''} · "
+              f"{PROFILE_LABELS.get(r['profile'], r['profile'])}"
+              for _, r in cases.iterrows()]
     carry = [len(r["carry_only_fields"]) for _, r in cases.iterrows()]
     used = [int(r["n_fields"]) - c for c, (_, r) in zip(carry, cases.iterrows())]
     ax.barh(labels, used, color=PALETTE["neutral"], label="used by some stage")
     ax.barh(labels, carry, left=used, color=PALETTE["warn"], label="carry-only (no stage uses it)")
     ax.invert_yaxis(); ax.set_xlabel("fields"); ax.legend(fontsize=8)
+    ax.tick_params(axis="y", labelsize=7.5)
     ax.set_title("Test records — field count and how much is pure carry")
     plt.tight_layout()
+    n_hand = int((cases.get("source", pd.Series(["hand"] * len(cases))) == "hand").sum())
     chart = ChartImage(
         title="Test-record composition",
         caption=("Carry-only fields are used by no intermediate stage and are needed only at "
                  "the end — the fields most at risk from an agent that forwards what it used "
-                 "and drops what it did not."),
+                 "and drops what it did not. "
+                 f"* marks the {n_hand} hand-authored records; the rest were generated from "
+                 "them and gated before admission."),
         base64_png=fig_to_base64(fig), section="data")
     plt.show()
     return chart

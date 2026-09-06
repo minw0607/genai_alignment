@@ -108,7 +108,7 @@ Each changes exactly one thing from the baseline. (The code calls these *arms* �
 
 ## Data & fixtures
 
-Six hand-authored records, entirely synthetic; all addresses and emails use reserved `.invalid` domains. Four profiles, each isolating something different:
+**Thirty records — six hand-authored, twenty-four generated from them.** All entirely synthetic; addresses and emails use reserved `.invalid` domains. Four profiles, each isolating something different:
 
 | Profile | What it tests |
 |---|---|
@@ -117,11 +117,29 @@ Six hand-authored records, entirely synthetic; all addresses and emails use rese
 | `carry_only_heavy` | Weighted toward fields no middle stage uses: interpreter requirements, deputyship orders, bereavement flags, vulnerability review dates |
 | `collision_bait` | Values containing the delimiters the stages themselves use |
 
-`clean_values` and `correction_bait` exist at **matched field counts** (13/13 and 22/22) so record size and correction bait vary independently.
+`clean_values` and `correction_bait` exist at **matched field counts** (13/13 and 22/22 among the hand-authored records) so record size and correction bait vary independently.
+
+### Where the other twenty-four came from
+
+The six originals were the whole fixture until the limitation at the bottom of this page — *"adding records is the single highest-value extension here"* — was acted on. They are now **seeds**: few-shot templates for a Bloom-style generation loop that proposes more records against the same four profiles and puts every proposal through mechanical gates before it is allowed in. The profiles themselves were not generated; they are the design.
+
+| | Records | Per profile |
+|---|---|---|
+| Hand-authored (`source: hand`) | 6 | 2 / 2 / 1 / 1 |
+| Generated (`source: generated`) | 24 | 6 / 6 / 6 / 6 |
+| **Total** | **30** | 8 clean · 8 correction · 7 carry-only · 7 collision |
+
+Two properties of this scenario are why the pilot ran here rather than somewhere with more headroom. Scoring is **fully deterministic** — no judge sits between a generated record and its score. And the **ground truth is the record itself**: the scorer asks whether each field arrived verbatim, so a generator cannot make the test easier without moving the answer key to match it. There is no target to move.
+
+Every record carries its `source`, so any result can be split hand-vs-generated; if the two halves disagree, the generated half is the suspect. The six-record set the results below were produced against is frozen at [`multi_agent_handoff.v1.jsonl`](../scenarios/fixtures/multi_agent_handoff.v1.jsonl).
+
+Method, gate-by-gate rejection counts, and the two criteria the quality judge invented for itself: [**Growing a Fixture Without Losing It**](fixture_generation.md).
 
 ---
 
 ## Sample Results
+
+> **These results are from the six-record fixture**, frozen at [`multi_agent_handoff.v1.jsonl`](../scenarios/fixtures/multi_agent_handoff.v1.jsonl). The thirty-record set has not been run yet; when it is, the numbers below stay as the prior for comparison rather than being overwritten.
 
 Full report: [`docs/samples/multi_agent_handoff_report.html`](samples/multi_agent_handoff_report.html) (open in a browser — GitHub shows raw HTML source). 6 records × 3 repeats × 5 configurations = **90 runs, 414 scored hops**. Your own configured LLM provider and models (see [.env.example](../.env.example)); no judge model anywhere.
 
@@ -209,7 +227,7 @@ The remaining explanation is that this stage has the vaguest job — screening c
 |---|---|
 | Define the control | The handoff contract: format, completeness, verbatim accuracy |
 | Build the target | A five-agent onboarding pipeline, no tools, all facts supplied at intake |
-| Exercise it | 6 records × 3 repeats × 5 configurations |
+| Exercise it | 30 records × 3 repeats × 5 configurations (results below are from the earlier 6-record set) |
 | Score | Direct comparison against the source record — no judge model |
 | Report | Per-arm, per-stage, per-profile, plus which specific values were altered |
 
@@ -227,7 +245,7 @@ It is also the only scenario whose headline result is a **capability boundary ra
 
 - **Model tier is the only live variable.** Field count, chain length, specification ambiguity and instruction conflict were all tested and none moved a capable model. The scenario's scope is genuinely narrower than its title suggests.
 - **"Small model" is not one thing.** The tier used here is where the boundary sits; two other small deployments relayed cleanly in earlier probing. The result is about *a* tier, not about cheap models generally.
-- **Six records is thin, and it shows.** `small_relay` scored 4/6 in one run and 6/6 in the next — crossing from p = 0.061 to p = 0.002 on nothing but a re-draw. `small_all` and the three clean arms were stable across both. The design has the power to detect an effect that breaks every record; it does not have the power to *estimate* one that breaks most of them. **Adding records is the single highest-value extension here.**
+- **Six records was thin, and it showed — the fixture is now thirty.** `small_relay` scored 4/6 in one run and 6/6 in the next, crossing from p = 0.061 to p = 0.002 on nothing but a re-draw. `small_all` and the three clean arms were stable across both. At six cases the design could detect an effect that breaks every record but not *estimate* one that breaks most of them: a 67% failure rate misses significance, and an observed 83% carries a 95% interval of [0.44, 0.97]. At thirty, a 20% effect is detectable and that interval narrows to [0.66, 0.93]. The fixture has been grown ([method](fixture_generation.md)); **the run at the larger n is the outstanding step**, and until it happens the instability above is unresolved rather than fixed.
 - **The vague-job hypothesis is untested.** Rewriting the compliance agent's job description to be as concrete as screening's would settle whether task specificity anchors format compliance.
 - **No recovery stage.** Nothing in this pipeline detects that an upstream handoff was malformed. A stage that *rejected* a bad record rather than forwarding it is the obvious control, and its absence is why malformation compounds.
 - **Strictly sequential.** A fan-out/fan-in topology would test whether agents reconcile conflicting versions of a field or silently pick one.

@@ -296,7 +296,7 @@ Several built scenarios are partial builds and say so in their own **Limitations
 | [`Regulus`](https://github.com/minw0607/Regulus) | Cited cross-framework governance crosswalk |
 | [`ai-governance-assurance`](https://github.com/minw0607/ai-governance-assurance) | Frameworks, checklists, and templates for governing AI systems |
 
-**On the wider ecosystem.** How this repo relates to the public evaluation landscape — Inspect AI, Bloom, GDPval, OpenAI Evals, LangSmith — and which pieces are worth borrowing rather than rebuilding: [`docs/ecosystem.md`](docs/ecosystem.md).
+**On the wider ecosystem.** How this repo relates to the public evaluation landscape — Inspect AI, Bloom, GDPval, OpenAI Evals, LangSmith — and which pieces are worth borrowing rather than rebuilding: [`docs/ecosystem.md`](docs/ecosystem.md). The one piece actually adopted so far is Bloom's generation loop, used to grow a fixture without letting the generator soften it: [`docs/fixture_generation.md`](docs/fixture_generation.md).
 
 ---
 

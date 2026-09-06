@@ -26,15 +26,17 @@ No tool above supplies it, and none of them prevents you from getting it wrong. 
 
 ## Assessments
 
-### Bloom — Anthropic · **planned dependency, for generation only**
+### Bloom — Anthropic · **adopted, for generation only** — [method note](fixture_generation.md)
 
 [Bloom](https://alignment.anthropic.com/2025/bloom-auto-evals/) (December 2025) takes a single researcher-specified behavior and automatically produces a whole evaluation suite through a four-stage pipeline — understand, ideate, roll out, judge. Anthropic built four alignment suites with it (delusional sycophancy, instructed long-horizon sabotage, self-preservation, self-preferential bias), each 100 rollouts × 3 repeats across 16 frontier models, and validated the output against hand-labelled judgments.
 
 **Why it fits.** Every scenario here is already a behavior specification — *does it disclose beyond policy*, *does it honour a stated limit*, *does a record survive a handoff*. Bloom is built to turn precisely that into hundreds of cases, which is the answer to this library's most persistent weakness: hand-authored fixtures at n = 6, n = 9, n = 15, where several findings have landed on *"underpowered, not null"* rather than on a result.
 
-**What is deliberately not taken.** Bloom's metric is an LLM judge — elicitation rate, the share of rollouts scoring ≥ 7/10 for behavior presence. Tier 2 and Tier 3 scenarios here keep a judge out of the primary path on purpose. Generated cases would be scored by this repo's own deterministic scorers, against its own floor arms.
+**What is deliberately not taken.** Bloom's metric is an LLM judge — elicitation rate, the share of rollouts scoring ≥ 7/10 for behavior presence. Tier 2 and Tier 3 scenarios here keep a judge out of the primary path on purpose. Generated cases are scored by this repo's own deterministic scorers, against its own floor arms.
 
-**And one risk that comes with it.** Generation at scale reintroduces author bias — cases produced by the same process that scores them. Bloom without an independent check turns a small-n problem into a large-n problem with the same blind spot. The mitigation is the external reproduction track that [Tool / MCP Abuse](tool_mcp_abuse.md) already runs, generalised.
+**What was built.** The loop lives in [`generation/`](../generation/) — behaviour spec, ideate from the hand-authored seeds, then mechanical gates, then a second-model quality check whose verdicts are recorded as provenance and gate nothing. Piloted on [Multi-Agent Handoff](multi_agent_handoff.md), which went from **6 records to 30**: 40 proposals, 9 rejected by the gates, every rejection on a profile boundary. Full method, including the two criteria the quality judge invented for itself, in [Growing a Fixture Without Losing It](fixture_generation.md).
+
+**And one risk that comes with it.** Generation at scale reintroduces author bias — cases produced by the same process that scores them. Bloom without an independent check turns a small-n problem into a large-n problem with the same blind spot. The pilot scenario minimises it by construction (its ground truth *is* the generated record, so there is no target to move); the general mitigation is the external reproduction track that [Tool / MCP Abuse](tool_mcp_abuse.md) already runs, generalised.
 
 ### Inspect AI — UK AI Security Institute · **candidate export target, not a source of method**
 
@@ -111,7 +113,7 @@ The repo's auditability claim rests on every report being regenerable from artif
 
 | Tool | Verdict |
 |---|---|
-| **Bloom** | Adopt for **case generation**; keep this repo's deterministic scoring |
+| **Bloom** | **Adopted** for case generation — [method note](fixture_generation.md); scoring stays deterministic |
 | **Inspect AI** | Evaluate as an **export format** for portability; not as a methodology |
 | **GDPval** | Read the task-construction method; the benchmark itself is out of scope |
 | **OpenAI Evals** | Not a fit — capability registry |
