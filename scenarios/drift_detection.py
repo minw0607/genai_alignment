@@ -82,6 +82,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 from genai_capability_bench.metrics.registry import evaluate_reference_metrics
 
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_JUDGE_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, ExtraSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import (
@@ -1103,6 +1104,8 @@ def save_artifacts(
     if public_floating_drift is not None:
         public_floating_drift.to_csv(out_dir / "public_floating_drift.csv", index=False)
         paths["public_floating_drift"] = out_dir / "public_floating_drift.csv"
+    archive_run("drift_detection", OUTPUT_DIR, headline="n_artifacts", value=str(len(paths)),
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

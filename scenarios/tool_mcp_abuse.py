@@ -84,6 +84,7 @@ from native.tool_attacks import (
     score_attack,
 )
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import fisher_exact_two_sided, min_attainable_pvalue, wilson_interval
@@ -1210,6 +1211,8 @@ def save_artifacts(results: pd.DataFrame, track_summary: pd.DataFrame, goal_summ
     if generic_summary is not None and len(generic_summary):
         generic_summary.to_csv(out_dir / "generic_track_summary.csv", index=False)
         paths["generic_summary"] = out_dir / "generic_track_summary.csv"
+    archive_run("tool_mcp_abuse", OUTPUT_DIR, headline="cases_compromised", value=str(int(track_summary["cases_compromised"].sum())) if "cases_compromised" in track_summary else "",
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

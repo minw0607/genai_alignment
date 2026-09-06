@@ -59,6 +59,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 
 from adapters.agent_otel import AgentHarness
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
@@ -902,6 +903,8 @@ def save_artifacts(
     rag_scored.to_csv(paths["rag_scored"], index=False)
     longhorizon_scored.to_csv(paths["longhorizon_scored"], index=False)
     midtask_scored.to_csv(paths["midtask_scored"], index=False)
+    archive_run("objective_alignment", OUTPUT_DIR, headline="n_artifacts", value=str(len(paths)),
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

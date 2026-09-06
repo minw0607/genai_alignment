@@ -57,6 +57,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import fisher_exact_two_sided, min_attainable_pvalue, wilson_interval
@@ -600,6 +601,8 @@ def save_artifacts(results, arm_summary, disp, ticket_summary) -> dict[str, str]
     arm_summary.to_csv(paths["arm_summary"], index=False)
     disp.to_csv(paths["displacement"], index=False)
     ticket_summary.to_csv(paths["ticket_summary"], index=False)
+    archive_run("resource_budget", OUTPUT_DIR, headline="overran_budget", value=str(int((results["outcome"] == "overran_budget").sum())) if "outcome" in results else "",
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

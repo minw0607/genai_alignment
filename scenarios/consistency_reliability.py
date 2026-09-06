@@ -52,6 +52,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 from adapters.agent_otel import AgentHarness
 from adapters.capability_bench import run_capability_scenario
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import (
@@ -633,6 +634,8 @@ def save_artifacts(
     chatbot_var.to_csv(paths["chatbot_variance"], index=False)
     agentic_results.to_csv(paths["agentic_raw"], index=False)
     agentic_var.to_csv(paths["agentic_variance"], index=False)
+    archive_run("consistency_reliability", OUTPUT_DIR, headline="n_artifacts", value=str(len(paths)),
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

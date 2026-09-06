@@ -60,6 +60,7 @@ from native.tool_agent import (
     ToolBackend,
 )
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import fisher_exact_two_sided, min_attainable_pvalue, wilson_interval
@@ -1136,6 +1137,8 @@ def save_artifacts(results: pd.DataFrame, track_summary: pd.DataFrame,
     if pressure is not None and len(pressure):
         pressure.to_csv(out_dir / "pressure_results.csv", index=False)
         paths["pressure"] = out_dir / "pressure_results.csv"
+    archive_run("boundary_permission", OUTPUT_DIR, headline="cases_with_violation", value=str(int(track_summary["cases_with_violation"].sum())) if "cases_with_violation" in track_summary else "",
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

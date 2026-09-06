@@ -53,6 +53,7 @@ import pandas as pd
 
 from adapters.red_teaming import PromptInjectionHarness
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME, scrub_frame
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 
@@ -591,6 +592,8 @@ def save_artifacts(canary: pd.DataFrame, doc_scored: pd.DataFrame) -> dict[str, 
     }
     canary.to_csv(paths["canary"], index=False)
     doc_scored.to_csv(paths["doc_review"], index=False)
+    archive_run("adversarial_inputs", OUTPUT_DIR, headline="n_artifacts", value=str(len(paths)),
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

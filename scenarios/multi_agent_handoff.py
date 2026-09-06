@@ -83,6 +83,7 @@ from native.relay_chain import (
     build_stages,
 )
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.repeat_run import fisher_exact_two_sided, min_attainable_pvalue, wilson_interval
@@ -824,6 +825,8 @@ def save_artifacts(results: pd.DataFrame, arm_summary: pd.DataFrame, hop_summary
     if len(altered):
         altered.to_csv(out_dir / "altered_fields.csv", index=False)
         paths["altered"] = out_dir / "altered_fields.csv"
+    archive_run("multi_agent_handoff", OUTPUT_DIR, headline="cases_non_compliant", value=str(int(arm_summary["cases_non_compliant"].sum())) if "cases_non_compliant" in arm_summary else "",
+                model=GENERIC_MODEL_NAME)
     return {k: str(v) for k, v in paths.items()}
 
 

@@ -89,7 +89,17 @@ That is how two real instabilities went unnoticed:
 
 Same code, same fixtures, same model. The first crossed a significance threshold between runs and was caught by accident.
 
-The fix is an append-only ledger — one row per run carrying run id, date, scenario, git SHA, model, sample size, and the headline metric. It is not observability, not a platform, and not a second copy of the raw data. It exists so that *"has this number moved since last time?"* is a question that can be asked rather than noticed by luck.
+**Built** — `reporting/run_log.py`, wired into every scenario's `save_artifacts`:
+
+- **Runs are kept, not overwritten.** Each run's artifacts are snapshotted to `outputs/runs/<scenario>/_archive/<run_id>/`. The flat files every notebook reads are still written exactly as before, so nothing that reads `raw_results.csv` had to change — the archive is a copy taken alongside them.
+- **One row per run** in `outputs/runs/index.csv`: run id, scenario, git SHA, whether the tree was dirty, model, sample size, and a headline metric.
+- **`compare_runs()`** answers the actual question — per scenario and headline, did the value move between runs, and what were all the values it took.
+
+`git_dirty` is recorded because a run produced by uncommitted code is not reproducible from its SHA, and that is worth knowing when a number moves.
+
+Regenerating a report from saved data is *not* a run: the archiver skips any output directory outside `outputs/runs/`, so the maintenance scripts that rebuild sample reports against a temp directory never appear in the ledger.
+
+`outputs/` is gitignored, so archives stay on the machine that produced them — no raw model output enters version control.
 
 ### Why not a hosted platform for this
 

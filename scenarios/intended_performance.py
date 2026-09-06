@@ -47,6 +47,7 @@ from genai_capability_bench.core.schemas import ModelSpec
 from genai_capability_bench.metrics.registry import evaluate_reference_metrics
 
 from reporting.artifacts import Artifact
+from reporting.run_log import archive_run
 from reporting.display import GENERIC_JUDGE_MODEL_NAME, GENERIC_MODEL_NAME, GENERIC_PROVIDER_NAME
 from reporting.html_report import ChartImage, DataSection, Metric, ScenarioReport, fig_to_base64
 from reporting.report import judge_borderline
@@ -467,6 +468,10 @@ def save_artifacts(scored: pd.DataFrame) -> dict[str, str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "golden_set_results.csv"
     scored.to_csv(path, index=False)
+    archive_run("intended_performance", OUTPUT_DIR,
+                headline="n_failed",
+                value=str(int((~scored["passed"]).sum())) if "passed" in scored else "",
+                model=GENERIC_MODEL_NAME, n_runs=len(scored))
     return {"golden_set": str(path)}
 
 
