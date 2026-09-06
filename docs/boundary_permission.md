@@ -295,6 +295,18 @@ Read it as **no gross failure**, not as resistance to pressure. At three repeats
 
 ---
 
+## Running these cases somewhere else
+
+The forty cases and this scenario's results export to [Inspect AI](https://inspect.aisi.org.uk/) shapes — a dataset of `Sample` objects, one eval log per arm, and a task stub — so an Inspect user can run **their own** agent against **these** cases rather than taking the numbers on trust:
+
+```bash
+python -m interop.inspect_export boundary_permission
+```
+
+Output lands in [`interop/exports/inspect/`](../interop/exports/inspect/). What the export covers, what it deliberately leaves to the reader, and how the outcome vocabulary here maps onto Inspect's binary scale: [Exporting to Inspect AI](interop_inspect.md).
+
+---
+
 ## Limitations & Future Work
 
 - **Prompt-level policy is not enforcement, and this scenario deliberately tests only the former.** `ToolBackend` executes every well-formed call it receives. That isolates the model's judgment as the thing under test, but it means a violation here is a *model* failure, not a demonstration that a real deployment would have leaked data — a production system should refuse out-of-scope calls server-side regardless of what the model decides. Adding a server-side-enforcement condition as a third arm would quantify how much residual risk real enforcement removes; that's the single biggest gap.

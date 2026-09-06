@@ -38,13 +38,15 @@ No tool above supplies it, and none of them prevents you from getting it wrong. 
 
 **And one risk that comes with it.** Generation at scale reintroduces author bias — cases produced by the same process that scores them. Bloom without an independent check turns a small-n problem into a large-n problem with the same blind spot. The pilot scenario minimises it by construction (its ground truth *is* the generated record, so there is no target to move); the general mitigation is the external reproduction track that [Tool / MCP Abuse](tool_mcp_abuse.md) already runs, generalised.
 
-### Inspect AI — UK AI Security Institute · **candidate export target, not a source of method**
+### Inspect AI — UK AI Security Institute · **export target, built** — [method note](interop_inspect.md)
 
 [Inspect AI](https://inspect.aisi.org.uk/) is the only widely-used framework in the landscape built for *safety and alignment* evaluation rather than capability or application metrics. Task / solver / scorer model, pytest-native, runs locally, open source.
 
-**What it would buy: portability.** Nobody outside this repo can currently run these scenarios or compare against them, which is the standing weakness of use-case-grounded work. Expressing a scenario as an Inspect task would fix that.
+**What it buys: portability.** Nobody outside this repo could run these scenarios or compare against them, which is the standing weakness of use-case-grounded work.
 
-**What it would not buy: methodology.** Inspect supplies a clean runtime. It does not supply the contrast ladder, the floor arm, honest denominators, or `min_attainable_pvalue`. Refactoring scenarios into its abstraction "for the methods" would cost a large migration and return nothing methodological — the design here is the more opinionated of the two. Treated as an **export format**, not a replacement.
+**What it does not buy: methodology.** Inspect supplies a clean runtime. It does not supply the contrast ladder, the floor arm, honest denominators, or `min_attainable_pvalue`. Refactoring scenarios into its abstraction "for the methods" would cost a large migration and return nothing methodological — the design here is the more opinionated of the two. Treated as an **export format**, not a replacement.
+
+**What was built.** [`interop/`](../interop/) exports a scenario's cases as an Inspect dataset, its results as one eval log per arm, and a task stub wiring the two — so an Inspect user can run *their* agent against *these* cases. Piloted on [Boundary / Permission](boundary_permission.md); the output round-trips through Inspect's own reader, and `inspect_ai` is deliberately not a dependency. Details, including the two schema errors that only surfaced when the logs were loaded back: [Exporting to Inspect AI](interop_inspect.md).
 
 ### GDPval — OpenAI · **not applicable, but its task discipline is worth reading**
 
@@ -114,7 +116,7 @@ The repo's auditability claim rests on every report being regenerable from artif
 | Tool | Verdict |
 |---|---|
 | **Bloom** | **Adopted** for case generation — [method note](fixture_generation.md); scoring stays deterministic |
-| **Inspect AI** | Evaluate as an **export format** for portability; not as a methodology |
+| **Inspect AI** | **Built** as an export format for portability — [method note](interop_inspect.md); not as a methodology |
 | **GDPval** | Read the task-construction method; the benchmark itself is out of scope |
 | **OpenAI Evals** | Not a fit — capability registry |
 | **LangSmith** | Capability worth having, hosting not worth the trade; build the ledger locally |
